@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body, #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    /* Menggunakan overscroll-behavior agar scroll terasa lebih 'native' di HP */
+    overscroll-behavior: none;
+    min-height: 100vh;
+    @apply bg-slate-50 dark:bg-slate-950 transition-colors duration-500;
+  }
+}
+
+/* Sembunyikan spinner/panah pada input type="number" agar tampilan bersih */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Untuk Firefox */
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  /* Mencegah seleksi teks yang tidak sengaja saat menekan tombol navigasi */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Animasi tambahan untuk transisi antar halaman agar lebih smooth */
+.animate-in {
+  animation-duration: 0.4s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
