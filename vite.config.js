@@ -1,13 +1,15 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite' // 1. Tambahkan import ini
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
-  // Menambahkan base path agar asset terpanggil dengan benar
+  plugins: [
+    react(),
+    tailwindcss(), // 2. Tambahkan fungsi ini di dalam array plugins
+  ],
   base: '/',
   build: {
-    // Memastikan output build bersih
     outDir: 'dist',
   }
 })
