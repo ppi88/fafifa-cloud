@@ -9,12 +9,11 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwc7CictChQ1mE5ROd_5
 
 function App() {
   const [activeTab, setActiveTab] = useState('Laporan');
-  // Gunakan standar ISO untuk state tanggal agar konsisten di semua browser HP
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); 
   const [archiveData, setArchiveData] = useState({});
   const [loading, setLoading] = useState(true);
 
-  // Helper: Format tampilan tanggal Indonesia
+  // --- HELPER FUNCTIONS ---
   const formatTanggalIndonesia = (dateStr) => {
     if (!dateStr) return "";
     try {
@@ -31,7 +30,6 @@ function App() {
     } catch (e) { return dateStr; }
   };
 
-  // Helper: Ubah YYYY-MM-DD ke D/M/YYYY (Format Google Sheet)
   const normalizeDate = (dateStr) => {
     if (!dateStr) return "";
     if (dateStr.includes('-')) {
@@ -41,21 +39,45 @@ function App() {
     return dateStr;
   };
 
-  // Helper: Ubah D/M/YYYY kembali ke objek Date
   const parseSheetDate = (sheetDate) => {
     if (!sheetDate || !sheetDate.includes('/')) return new Date();
     const [d, m, y] = sheetDate.split('/');
     return new Date(y, m - 1, d);
   };
 
-  // Fungsi ambil data dari Cloud
+  // --- LOGIKA UTAMA SINKRONISASI (ESTAFET STOK) ---
+  const processChainedData = (groupedData) => {
+    const sortedDates = Object.keys(groupedData).sort((a, b) => parseSheetDate(a) - parseSheetDate(b));
+    const trackerSisa = {};
+    const chainedData = {};
+
+    sortedDates.forEach(dateStr => {
+      chainedData[dateStr] = groupedData[dateStr].map(item => {
+        const namaKue = item.jenisKue;
+        const sisaLalu = trackerSisa[namaKue] !== undefined 
+          ? trackerSisa[namaKue] 
+          : (Number(item.sisaKemarin) || 0);
+
+        trackerSisa[namaKue] = Number(item.sisa) || 0;
+
+        return {
+          ...item,
+          sisaKemarin: sisaLalu,
+          jumlah: sisaLalu + (Number(item.stokBaru) || 0)
+        };
+      });
+    });
+
+    return chainedData;
+  };
+
+  // --- DATA FETCHING ---
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(SCRIPT_URL);
       const data = await response.json();
       
-      // Grouping data berdasarkan tanggal
       const grouped = data.reduce((acc, curr) => {
         let tglKey = curr.tanggal ? curr.tanggal.toString().trim() : "Tanpa Tanggal";
         if (!acc[tglKey]) acc[tglKey] = [];
@@ -71,7 +93,6 @@ function App() {
     }
   }, []);
 
-  // Fungsi Simpan/Update Data
   const updateStockData = async (date, updatedList, penyesuaianValue = 0, catatan = "") => {
     const finalData = updatedList.map(item => ({
       ...item,
@@ -85,26 +106,21 @@ function App() {
     }));
 
     try {
-      // Optimistic update: langsung update UI tanpa nunggu server
       setArchiveData(prev => ({ ...prev, [normalizeDate(date)]: finalData }));
-      
       await fetch(SCRIPT_URL, {
         method: 'POST',
-        mode: 'no-cors', // Penting untuk Apps Script
+        mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(finalData),
       });
-      
-      // Refresh data setelah jeda singkat
       setTimeout(fetchData, 1500); 
       return true;
     } catch (err) { 
-      alert("Koneksi gagal. Cek internet Anda.");
+      alert("Koneksi gagal.");
       return false; 
     }
   };
 
-  // Fungsi Hapus Data
   const deleteData = async (dateStr) => {
     if (!window.confirm(`Hapus permanen data ${formatTanggalIndonesia(dateStr)}?`)) return;
     setLoading(true);
@@ -116,7 +132,7 @@ function App() {
       });
       fetchData();
     } catch (err) { 
-      alert("Gagal menghapus data."); 
+      alert("Gagal menghapus."); 
     } finally { 
       setLoading(false); 
     }
@@ -135,7 +151,6 @@ function App() {
   ];
 
   const renderContent = () => {
-    // Daftar menu utama Anda
     const defaultList = [
       { id: 1, jenisKue: 'Bolu Kukus', sisaKemarin: 0, stokBaru: 0, sisa: 0, unit: 'Biji' },
       { id: 2, jenisKue: 'Roti Gabin', sisaKemarin: 0, stokBaru: 0, sisa: 0, unit: 'Mika' },
@@ -148,10 +163,11 @@ function App() {
       const targetDateStr = normalizeDate(selectedDate);
       const existingData = archiveData[targetDateStr];
       
-      // Logika ambil sisa dari tanggal terakhir yang ada datanya
-      const sortedDates = Object.keys(archiveData).sort((a, b) => parseSheetDate(b) - parseSheetDate(a));
-      const previousDateStr = sortedDates.find(d => parseSheetDate(d) < parseSheetDate(targetDateStr));
-      const lastReport = previousDateStr ? archiveData[previousDateStr] : null;
+      const previousDates = Object.keys(archiveData)
+        .filter(d => parseSheetDate(d) < parseSheetDate(targetDateStr))
+        .sort((a, b) => parseSheetDate(b) - parseSheetDate(a));
+      
+      const lastReport = previousDates.length > 0 ? archiveData[previousDates[0]] : null;
 
       return defaultList.map(item => {
         const prevItem = lastReport ? lastReport.find(p => p.jenisKue === item.jenisKue) : null;
@@ -174,10 +190,13 @@ function App() {
 
     switch (activeTab) {
       case 'Laporan':
-        const allDates = Object.keys(archiveData).sort((a, b) => parseSheetDate(b) - parseSheetDate(a));
+        const chainedArchive = processChainedData(archiveData);
+        const allDates = Object.keys(chainedArchive).sort((a, b) => parseSheetDate(b) - parseSheetDate(a));
+        
         return (
-          <div className="space-y-8 animate-in fade-in duration-700">
-            <div className="px-2 flex justify-between items-end pt-4">
+          /* Fokus perubahan: space-y-4 & pt-0 */
+          <div className="space-y-4 animate-in fade-in duration-700">
+            <div className="px-2 flex justify-between items-end pt-0">
               <div>
                 <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 uppercase italic leading-none">Laporan Cloud</h2>
                 <p className="text-[10px] font-bold text-blue-600 uppercase mt-2 tracking-widest flex items-center gap-2">
@@ -185,28 +204,25 @@ function App() {
                   {loading ? "Sinkronisasi..." : "Terhubung"}
                 </p>
               </div>
-              <button 
-                onClick={fetchData} 
-                className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-blue-600 shadow-sm active:scale-90 transition-all"
-              >
+              <button onClick={fetchData} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-blue-600 shadow-sm active:scale-90 transition-all">
                 <TrendingUp size={20} className={loading ? "animate-spin" : ""} />
               </button>
             </div>
-            <div className="space-y-6">
+            <div className="space-y-4">
               {allDates.length > 0 ? (
                 allDates.map((dateStr) => (
                   <ReportTable 
                     key={dateStr} 
                     tanggal={formatTanggalIndonesia(dateStr)} 
                     isToday={dateStr === normalizeDate(selectedDate)}
-                    data={archiveData[dateStr]} 
+                    data={chainedArchive[dateStr]}
                     onDelete={() => deleteData(dateStr)} 
                   />
                 ))
               ) : (
                 <div className="text-center py-24 opacity-30">
                   <FileText size={48} className="mx-auto mb-4" />
-                  <p className="font-black uppercase text-[10px] tracking-widest">Belum Ada Data Cloud</p>
+                  <p className="font-black uppercase text-[10px] tracking-widest">Belum Ada Data</p>
                 </div>
               )}
             </div>
@@ -215,10 +231,11 @@ function App() {
 
       case 'Stok':
         return (
-          <div className="space-y-6">
-            <div className="px-2 pt-4">
-              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Entry Manager</p>
-              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 italic">{formatTanggalIndonesia(selectedDate)}</h3>
+          /* Fokus perubahan: space-y-1 & pt-0 */
+          <div className="space-y-1">
+            <div className="px-2 pt-0">
+              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-0.5">Entry Manager</p>
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 italic leading-tight">{formatTanggalIndonesia(selectedDate)}</h3>
             </div>
             <StockView 
               key={selectedDate} 
@@ -234,7 +251,7 @@ function App() {
         const summaryStok = currentData.reduce((a, b) => a + (Number(b.sisaKemarin) + Number(b.stokBaru)), 0);
         const summarySisa = currentData.reduce((a, b) => a + Number(b.sisa), 0);
         return (
-          <div className="space-y-6 px-2 pt-4 animate-in slide-in-from-bottom-4 duration-500">
+          <div className="space-y-6 px-2 pt-0 animate-in slide-in-from-bottom-4 duration-500">
             <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 uppercase italic">Dashboard</h2>
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-blue-600 rounded-[2.5rem] p-6 text-white shadow-xl shadow-blue-500/30">
@@ -272,13 +289,12 @@ function App() {
           </div>
         </div>
       </header>
-
       <div className="max-w-md mx-auto relative">
-        <main className="p-4 pt-28 pb-40">
+        {/* PERUBAHAN UTAMA: Ubah pt-28 menjadi pt-[72px] (melekat pada header) */}
+        <main className="p-4 pt-[72px] pb-40">
           {renderContent()}
         </main>
       </div>
-
       <BottomNav menuItems={menuItems} activeTab={activeTab} setActiveTab={setActiveTab} />
     </div>
   );
