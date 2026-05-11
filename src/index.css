@@ -5,33 +5,176 @@
     margin: 0;
     padding: 0;
     width: 100%;
-    /* Menggunakan overscroll-behavior agar scroll terasa lebih 'native' di HP */
+    /* svh memastikan tinggi pas dengan layar HP meski ada address bar browser */
+    height: 100svh;
     overscroll-behavior: none;
-    min-height: 100vh;
+    overflow-x: hidden;
     @apply bg-slate-50 dark:bg-slate-950 transition-colors duration-500;
+  }
+
+  body {
+    /* Menggunakan font system ala iOS/San Francisco */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Menghilangkan highlight biru saat klik di mobile */
+    -webkit-tap-highlight-color: transparent;
+    /* Mencegah seleksi teks saat klik cepat pada tombol */
+    user-select: none;
   }
 }
 
-/* Sembunyikan spinner/panah pada input type="number" agar tampilan bersih */
+/* ==============================================
+   ANIMASI KUSTOM (SLIDING & FADING)
+   ==============================================
+*/
+
+/* --- 1. Animasi Bottom Sheet (Standard - Jarak Jauh) --- */
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+
+/* --- 2. Animasi Top Sheet (Standard - Jarak Jauh) --- */
+@keyframes slideDownFromTop {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes slideUpToTop {
+  from { transform: translateY(0); }
+  to { transform: translateY(-100%); }
+}
+
+/* --- 3. Animasi Fade (Latar Belakang) --- */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* --- 4. ANIMASI SMOOTH & LITE (Jarak Dekat & Cepat) --- */
+@keyframes smoothSlideIn {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes smoothSlideOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(20px); }
+}
+
+@keyframes smoothTopIn {
+  from { opacity: 0; transform: translateY(-30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes smoothTopOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-20px); }
+}
+
+/* --- Class Utility untuk Animasi --- */
+
+/* Standard Classes */
+.animate-slide-up {
+  animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.animate-top-in {
+  animation: slideDownFromTop 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-top-out {
+  animation: slideUpToTop 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.animate-fade-out {
+  animation: fadeOut 0.25s ease-in forwards;
+}
+
+/* Smooth & Lite Classes */
+.animate-smooth-in {
+  animation: smoothSlideIn 0.25s ease-out forwards;
+}
+
+.animate-smooth-out {
+  animation: smoothSlideOut 0.2s ease-in forwards;
+}
+
+.animate-smooth-top-in {
+  animation: smoothTopIn 0.25s ease-out forwards;
+}
+
+.animate-smooth-top-out {
+  animation: smoothTopOut 0.2s ease-in forwards;
+}
+
+
+/* ==============================================
+   STYLING UI & INPUT
+   ==============================================
+*/
+
+/* Sembunyikan spinner (panah) pada input type="number" */
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
 
-/* Untuk Firefox */
 input[type=number] {
   -moz-appearance: textfield;
 }
 
-body {
-  font-family: 'Inter', sans-serif;
-  /* Mencegah seleksi teks yang tidak sengaja saat menekan tombol navigasi */
-  -webkit-tap-highlight-color: transparent;
+/* Custom Scrollbar Minimalis */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
 }
 
-/* Animasi tambahan untuk transisi antar halaman agar lebih smooth */
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 dark:bg-slate-800 rounded-full;
+}
+
+/* Penanganan Safe Area untuk HP Berponi (Notch) */
+header {
+  padding-top: env(safe-area-inset-top, 1rem);
+}
+
+main {
+  /* Memberikan ruang agar konten tidak terpotong indikator home di iPhone */
+  padding-bottom: env(safe-area-inset-bottom, 2rem);
+}
+
+/* Class Efek Kaca (Glassmorphism) */
+.glass {
+  @apply bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50;
+}
+
+/* Utility tambahan untuk animasi masuk standar */
 .animate-in {
   animation-duration: 0.4s;
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  animation-fill-mode: forwards;
 }

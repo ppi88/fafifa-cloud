@@ -1,301 +1,468 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Home, ShoppingCart, Package, FileText, PieChart, Bell, TrendingUp } from 'lucide-react';
-import ReportTable from './ReportTable';
-import BottomNav from './BottomNav';
-import StockView from './StockView';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Home, ChefHat, Package, FileText, Grip, Activity, LogOut } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion'; 
 
-// URL Apps Script Anda
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwc7CictChQ1mE5ROd_5Pt0Z7bdRTy6c0-fPr6MyDj_NUNyctqGg_Tcz7BJylTQT_LhgA/exec";
+// Import Komponen & Pages
+import Header from './components/Header'; 
+import BottomNav from './components/BottomNav';
+import Dashboard from './pages/Dashboard';
+import ProductionPage from './pages/ProductionPage';
+import AnalisaPage from './pages/AnalisaPage'; 
+import ReportPage from './pages/ReportPage';
+import MasterPage from './pages/MasterPage'; 
+import VisitInput from './components/VisitInput'; 
+
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyk7m7xIMnHRIsW8nDcouYcq7OvzyftceSbprOvB8lamBshKT3GxN55jVeRD8JeQ4Bb/exec";
 
 function App() {
-  const [activeTab, setActiveTab] = useState('Laporan');
+  const [activeTab, setActiveTab] = useState('Home');
+  const [renderedTabs, setRenderedTabs] = useState({ Home: true }); 
+
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); 
   const [archiveData, setArchiveData] = useState({});
+  const [sisaArchive, setSisaArchive] = useState({}); 
+  const [priceList, setPriceList] = useState({});
+  const [bahanList, setBahanList] = useState({}); 
+  const [resepData, setResepData] = useState({}); 
+  const [targetYieldData, setTargetYieldData] = useState({}); 
+  const [hiddenKueList, setHiddenKueList] = useState([]); 
+  const [visitData, setVisitData] = useState([]); 
+  
   const [loading, setLoading] = useState(true);
+  const [isSubViewOpen, setIsSubViewOpen] = useState(false);
+  
+  // State untuk Dialog Konfirmasi Keluar Aplikasi
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
-  // --- HELPER FUNCTIONS ---
-  const formatTanggalIndonesia = (dateStr) => {
-    if (!dateStr) return "";
-    try {
-      let date;
-      if (dateStr.includes('/')) {
-        const [d, m, y] = dateStr.split('/');
-        date = new Date(y, m - 1, d);
-      } else {
-        date = new Date(dateStr);
+  // Reference cerdas untuk selalu menangkap state terbaru di event listener
+  const appStateRef = useRef({ activeTab, isSubViewOpen, showExitConfirm });
+
+  useEffect(() => {
+    setRenderedTabs(prev => ({ ...prev, [activeTab]: true }));
+  }, [activeTab]);
+
+  // Selalu perbarui ref dengan state terkini
+  useEffect(() => {
+    appStateRef.current = { activeTab, isSubViewOpen, showExitConfirm };
+  }, [activeTab, isSubViewOpen, showExitConfirm]);
+
+  // 🔥 ENGINE DOUBLE BACK & SMART ROUTING ANTI-JEBOL 🔥
+  useEffect(() => {
+    // 1. Suntikkan 1 riwayat palsu saat aplikasi baru pertama dibuka
+    window.history.pushState({ page: 'fafifa-app' }, '', window.location.href);
+
+    const handlePopState = (event) => {
+      const state = appStateRef.current;
+
+      // Kasus A: Jika Form Lembar Data (Sisa/Produksi) sedang terbuka
+      if (state.isSubViewOpen) {
+        window.history.pushState({ page: 'fafifa-app' }, '', window.location.href);
+        return;
       }
-      return new Intl.DateTimeFormat('id-ID', {
-        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-      }).format(date);
-    } catch (e) { return dateStr; }
-  };
+
+      // Kasus B: Jika bukan di halaman Beranda (Home)
+      if (state.activeTab !== 'Home') {
+        setActiveTab('Home');
+        window.history.pushState({ page: 'fafifa-app' }, '', window.location.href);
+        return;
+      }
+
+      // Kasus C: Sudah di Home, TAPI dialog keluar belum muncul
+      if (!state.showExitConfirm) {
+        setShowExitConfirm(true);
+        window.history.pushState({ page: 'fafifa-app' }, '', window.location.href);
+        return;
+      }
+
+      // Kasus D: Dialog keluar sudah muncul, dan ditekan BACK lagi (DOUBLE BACK)
+      if (state.showExitConfirm) {
+        setShowExitConfirm(false);
+        window.history.back(); // Mundur satu langkah murni untuk keluar
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []); // Cukup dijalankan sekali saat aplikasi dimuat berkat bantuan useRef
 
   const normalizeDate = (dateStr) => {
     if (!dateStr) return "";
-    if (dateStr.includes('-')) {
-      const [y, m, d] = dateStr.split('-');
-      return `${parseInt(d)}/${parseInt(m)}/${y}`;
-    }
-    return dateStr;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
   };
 
-  const parseSheetDate = (sheetDate) => {
-    if (!sheetDate || !sheetDate.includes('/')) return new Date();
-    const [d, m, y] = sheetDate.split('/');
-    return new Date(y, m - 1, d);
+  const formatTanggalIndonesia = (dateStr) => {
+    if (!dateStr) return "";
+    try {
+      const d = new Date(dateStr);
+      return new Intl.DateTimeFormat('id-ID', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+      }).format(d);
+    } catch (e) { return dateStr; }
   };
 
-  // --- LOGIKA UTAMA SINKRONISASI (ESTAFET STOK) ---
-  const processChainedData = (groupedData) => {
-    const sortedDates = Object.keys(groupedData).sort((a, b) => parseSheetDate(a) - parseSheetDate(b));
-    const trackerSisa = {};
-    const chainedData = {};
-
-    sortedDates.forEach(dateStr => {
-      chainedData[dateStr] = groupedData[dateStr].map(item => {
-        const namaKue = item.jenisKue;
-        const sisaLalu = trackerSisa[namaKue] !== undefined 
-          ? trackerSisa[namaKue] 
-          : (Number(item.sisaKemarin) || 0);
-
-        trackerSisa[namaKue] = Number(item.sisa) || 0;
-
-        return {
-          ...item,
-          sisaKemarin: sisaLalu,
-          jumlah: sisaLalu + (Number(item.stokBaru) || 0)
-        };
+  const sendToSheets = async (action, data) => {
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, data })
       });
-    });
-
-    return chainedData;
+      const resJson = await response.json();
+      if (resJson.status === 'Error') throw new Error(resJson.message);
+      return resJson;
+    } catch (err) {
+      console.error(`Gagal: ${action}`, err);
+      throw err;
+    }
   };
 
-  // --- DATA FETCHING ---
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(SCRIPT_URL);
-      const data = await response.json();
+      const response = await fetch(`${SCRIPT_URL}?t=${new Date().getTime()}`);
+      const resJson = await response.json();
       
-      const grouped = data.reduce((acc, curr) => {
-        let tglKey = curr.tanggal ? curr.tanggal.toString().trim() : "Tanpa Tanggal";
+      if (resJson.prices) {
+        const pObj = resJson.prices.reduce((acc, curr) => {
+          acc[curr.jenisKue] = Number(curr.harga) || 0;
+          return acc;
+        }, {});
+        setPriceList(pObj);
+      }
+
+      if (resJson.bahan) {
+        const bObj = resJson.bahan.reduce((acc, curr) => {
+          acc[curr.namaBahan] = { harga: Number(curr.harga) || 0, kuantitas: Number(curr.kuantitas) || 1, satuan: curr.satuan };
+          return acc;
+        }, {});
+        setBahanList(bObj);
+      }
+
+      if (resJson.resep) {
+        const rObj = resJson.resep.reduce((acc, curr) => {
+          if (!acc[curr.namaKue]) acc[curr.namaKue] = [];
+          acc[curr.namaKue].push({ namaBahan: curr.namaBahan, qty: Number(curr.qty) });
+          return acc;
+        }, {});
+        setResepData(rObj);
+      }
+
+      const defaultYields = { GABIN: 28, PASTEL: 10, MTELUR: 10, BOLUKUKUS: 10, PASTELMINI: 5 };
+      if (resJson.yields) {
+        const yObj = resJson.yields.reduce((acc, curr) => {
+          acc[curr.namaKue] = Number(curr.yield) || 1;
+          return acc;
+        }, {});
+        setTargetYieldData({ ...defaultYields, ...yObj });
+      } else {
+        setTargetYieldData(defaultYields);
+      }
+
+      setHiddenKueList(resJson.hiddenKue || []);
+      setVisitData(resJson.kunjungan || []);
+
+      const rawData = resJson.data || [];
+      const grouped = rawData.reduce((acc, curr) => {
+        if (!curr.tanggal) return acc;
+        let tglKey = normalizeDate(curr.tanggal);
         if (!acc[tglKey]) acc[tglKey] = [];
         acc[tglKey].push(curr);
         return acc;
       }, {});
-      
       setArchiveData(grouped);
+
+      const rawSisa = resJson.sisa || [];
+      const groupedSisa = rawSisa.reduce((acc, curr) => {
+        if (!curr.tanggal) return acc;
+        let tglKey = normalizeDate(curr.tanggal);
+        if (!acc[tglKey]) acc[tglKey] = [];
+        acc[tglKey].push(curr);
+        return acc;
+      }, {});
+      setSisaArchive(groupedSisa);
+
     } catch (err) { 
-      console.error("Gagal mengambil data:", err); 
+      console.error("Fetch Error:", err); 
     } finally { 
       setLoading(false); 
     }
   }, []);
 
-  const updateStockData = async (date, updatedList, penyesuaianValue = 0, catatan = "") => {
-    const finalData = updatedList.map(item => ({
-      ...item,
-      tanggal: normalizeDate(date),
-      sisaKemarin: Number(item.sisaKemarin) || 0,
-      stokBaru: Number(item.stokBaru) || 0,
-      sisa: Number(item.sisa) || 0,
-      jumlah: (Number(item.sisaKemarin) || 0) + (Number(item.stokBaru) || 0),
-      penyesuaian: Number(penyesuaianValue) || 0,
-      keterangan: catatan 
-    }));
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-    try {
-      setArchiveData(prev => ({ ...prev, [normalizeDate(date)]: finalData }));
-      await fetch(SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(finalData),
-      });
-      setTimeout(fetchData, 1500); 
-      return true;
-    } catch (err) { 
-      alert("Koneksi gagal.");
-      return false; 
-    }
-  };
-
-  const deleteData = async (dateStr) => {
-    if (!window.confirm(`Hapus permanen data ${formatTanggalIndonesia(dateStr)}?`)) return;
+  const onSaveProduksi = async (dataProduksi) => {
     setLoading(true);
     try {
-      await fetch(SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        body: JSON.stringify({ action: 'DELETE', tanggal: dateStr }),
+      const cleanKey = (str) => str ? str.replace(/[^a-zA-Z0-9]/g, "").toUpperCase() : "";
+      const dataArray = Array.isArray(dataProduksi) ? dataProduksi : [dataProduksi];
+
+      const finalData = dataArray.map(curr => {
+        const kue = curr.jenisKue;
+        let hrgJual = Array.isArray(priceList) ? (priceList.find(x => x.jenisKue === kue)?.harga || 0) : (priceList[kue] || 0);
+        let resepKue = Array.isArray(resepData) ? resepData.filter(x => x.namaKue === kue) : (resepData[kue] || []);
+
+        const modalResep = resepKue.reduce((sum, item) => {
+          let b = Array.isArray(bahanList) ? bahanList.find(x => x.namaBahan === item.namaBahan) : bahanList[item.namaBahan];
+          let hargaBhn = b ? Number(b.harga) : 0;
+          let qtyBhn = b ? (Number(b.kuantitas) || 1) : 1;
+          return sum + (hargaBhn / qtyBhn) * item.qty;
+        }, 0);
+
+        const currentYield = targetYieldData[kue] || targetYieldData[cleanKey(kue)] || 1;
+        const modalPcs = modalResep / currentYield;
+
+        return { ...curr, modalPcs: isNaN(modalPcs) ? 0 : modalPcs, hargaJual: isNaN(hrgJual) ? 0 : hrgJual };
       });
-      fetchData();
-    } catch (err) { 
-      alert("Gagal menghapus."); 
-    } finally { 
-      setLoading(false); 
+
+      await sendToSheets('ADD_PRODUKSI', finalData);
+      await fetchData(); 
+      return true;
+    } catch (e) { 
+      setLoading(false);
+      throw e; 
     }
   };
 
-  useEffect(() => { 
-    fetchData(); 
-  }, [fetchData]);
+  const onSaveSisa = async (dataSisa) => {
+    setLoading(true);
+    try { await sendToSheets('ADD_SISA', dataSisa); await fetchData(); return true; } 
+    catch (e) { setLoading(false); throw e; }
+  };
+
+  const onDeleteDate = async (tanggalMentah) => {
+    if (!window.confirm(`Hapus SELURUH data pada tanggal ${tanggalMentah}?`)) return;
+    setLoading(true);
+    try { await sendToSheets('DELETE_BY_DATE', { tanggal: tanggalMentah }); await fetchData(); } 
+    catch (e) { alert("Gagal menghapus data harian!"); setLoading(false); }
+  };
+
+  const onAddNewKue = async (newKue) => {
+    setLoading(true); setPriceList(prev => ({ ...prev, [newKue.jenisKue]: Number(newKue.harga) }));
+    try { await sendToSheets('ADD_NEW_KUE', newKue); await fetchData(); } catch (e) { fetchData(); }
+  };
+
+  const onUpdateKue = async (oldName, updatedData) => {
+    setLoading(true);
+    const newPriceList = { ...priceList };
+    if (oldName !== updatedData.jenisKue) delete newPriceList[oldName];
+    newPriceList[updatedData.jenisKue] = Number(updatedData.harga);
+    setPriceList(newPriceList);
+    try { await sendToSheets('UPDATE_KUE', { oldJenisKue: oldName, jenisKue: updatedData.jenisKue, harga: Number(updatedData.harga) }); await fetchData(); } 
+    catch (e) { fetchData(); }
+  };
+
+  const onDeleteKue = async (namaKue) => {
+    setLoading(true); const newPriceList = { ...priceList }; delete newPriceList[namaKue]; setPriceList(newPriceList);
+    try { await sendToSheets('DELETE_KUE', { jenisKue: namaKue }); await fetchData(); } catch (e) { fetchData(); }
+  };
+
+  const onToggleHideKue = async (namaKue, isHidden) => {
+    setLoading(true); setHiddenKueList(prev => isHidden ? [...prev, namaKue] : prev.filter(k => k !== namaKue));
+    try { await sendToSheets('TOGGLE_HIDE_KUE', { jenisKue: namaKue, isHidden }); await fetchData(); } catch (e) { fetchData(); }
+  };
+
+  const onAddNewBahan = async (newBahan) => {
+    setLoading(true);
+    setBahanList(prev => ({ ...prev, [newBahan.namaBahan]: { harga: Number(newBahan.harga), kuantitas: Number(newBahan.kuantitas), satuan: newBahan.satuan } }));
+    try { await sendToSheets('ADD_BAHAN', newBahan); await fetchData(); } catch (e) { fetchData(); }
+  };
+
+  const onUpdateBahan = async (oldName, updatedData) => {
+    setLoading(true);
+    const newBahanList = { ...bahanList };
+    if (oldName !== updatedData.namaBahan) delete newBahanList[oldName];
+    newBahanList[updatedData.namaBahan] = { harga: Number(updatedData.harga), kuantitas: Number(updatedData.kuantitas), satuan: updatedData.satuan };
+    setBahanList(newBahanList);
+    try { await sendToSheets('UPDATE_BAHAN', { oldNamaBahan: oldName, namaBahan: updatedData.namaBahan, harga: Number(updatedData.harga), kuantitas: Number(updatedData.kuantitas), satuan: updatedData.satuan }); await fetchData(); } 
+    catch (e) { fetchData(); }
+  };
+
+  const onDeleteBahan = async (namaBahan) => {
+    setLoading(true); const newBahanList = { ...bahanList }; delete newBahanList[namaBahan]; setBahanList(newBahanList);
+    try { await sendToSheets('DELETE_BAHAN', { namaBahan }); await fetchData(); } catch (e) { fetchData(); }
+  };
+
+  const onSaveResep = async (namaKue, resepArray, yieldResult = 1) => {
+    setLoading(true); setResepData(prev => ({ ...prev, [namaKue]: resepArray })); setTargetYieldData(prev => ({ ...prev, [namaKue]: yieldResult }));
+    try { await sendToSheets('SAVE_RESEP', { namaKue, resep: resepArray, targetYield: yieldResult }); await fetchData(); } catch (e) { fetchData(); }
+  };
+
+  const onSaveKunjungan = async (dataK) => {
+    setLoading(true);
+    try { await sendToSheets('ADD_KUNJUNGAN', dataK); await fetchData(); return true; } 
+    catch (e) { alert("Gagal catat kunjungan!"); setLoading(false); return false; }
+  };
+
+  const commonProps = {
+    archiveData, sisaArchive, normalizeDate, selectedDate, setSelectedDate, fetchData, 
+    loading, priceList, formatTanggal: formatTanggalIndonesia,
+    masterKueList: Object.keys(priceList).filter(kue => !hiddenKueList.includes(kue)),
+    onAddNewKue, onDeleteKue, onUpdateKue, onSaveProduksi, onSaveSisa, onDeleteDate,
+    setIsSubViewOpen, openPriceModal: () => setActiveTab('Master'), bahanList, 
+    onAddNewBahan, onDeleteBahan, onUpdateBahan, resepData, targetYieldData, 
+    onSaveResep, hiddenKueList, onToggleHideKue, visitData, 
+  };
 
   const menuItems = [
-    { id: 'Home', icon: <Home size={22} />, label: 'Home' },
-    { id: 'Transaksi', icon: <ShoppingCart size={22} />, label: 'Order' },
-    { id: 'Stok', icon: <Package size={22} />, label: 'Stock' },
-    { id: 'Laporan', icon: <FileText size={22} />, label: 'Report' },
-    { id: 'Analisa', icon: <PieChart size={22} />, label: 'Stats' },
+    { id: 'Home', icon: <Home size={22} />, label: 'Beranda' },
+    { id: 'Produksi', icon: <ChefHat size={22} />, label: 'Produksi' },
+    { id: 'Laporan', icon: <FileText size={22} />, label: 'Laporan' }, 
+    { id: 'Analisa', icon: <Activity size={22} />, label: 'Analisa' }, 
   ];
 
-  const renderContent = () => {
-    const defaultList = [
-      { id: 1, jenisKue: 'Bolu Kukus', sisaKemarin: 0, stokBaru: 0, sisa: 0, unit: 'Biji' },
-      { id: 2, jenisKue: 'Roti Gabin', sisaKemarin: 0, stokBaru: 0, sisa: 0, unit: 'Mika' },
-      { id: 3, jenisKue: 'Pastel', sisaKemarin: 0, stokBaru: 0, sisa: 0, unit: 'Biji' },
-      { id: 4, jenisKue: 'M. Telur', sisaKemarin: 0, stokBaru: 0, sisa: 0, unit: 'Biji' },
-      { id: 5, jenisKue: 'Lain-Lain', sisaKemarin: 0, stokBaru: 0, sisa: 0, unit: 'Biji' },
-    ];
-
-    const getAutoStock = () => {
-      const targetDateStr = normalizeDate(selectedDate);
-      const existingData = archiveData[targetDateStr];
-      
-      const previousDates = Object.keys(archiveData)
-        .filter(d => parseSheetDate(d) < parseSheetDate(targetDateStr))
-        .sort((a, b) => parseSheetDate(b) - parseSheetDate(a));
-      
-      const lastReport = previousDates.length > 0 ? archiveData[previousDates[0]] : null;
-
-      return defaultList.map(item => {
-        const prevItem = lastReport ? lastReport.find(p => p.jenisKue === item.jenisKue) : null;
-        const autoSisaKemarin = prevItem ? (Number(prevItem.sisa) || 0) : 0;
-        const currentEntry = existingData ? existingData.find(c => c.jenisKue === item.jenisKue) : null;
-
-        return {
-          ...item,
-          sisaKemarin: autoSisaKemarin,
-          stokBaru: currentEntry ? (Number(currentEntry.stokBaru) || 0) : 0,
-          sisa: currentEntry ? (Number(currentEntry.sisa) || 0) : 0,
-          jumlah: autoSisaKemarin + (currentEntry ? Number(currentEntry.stokBaru) : 0),
-          penyesuaian: currentEntry ? (Number(currentEntry.penyesuaian) || 0) : 0,
-          keterangan: currentEntry ? (currentEntry.keterangan || "") : ""
-        };
-      });
-    };
-
-    const currentData = getAutoStock();
-
-    switch (activeTab) {
-      case 'Laporan':
-        const chainedArchive = processChainedData(archiveData);
-        const allDates = Object.keys(chainedArchive).sort((a, b) => parseSheetDate(b) - parseSheetDate(a));
-        
-        return (
-          /* Fokus perubahan: space-y-4 & pt-0 */
-          <div className="space-y-4 animate-in fade-in duration-700">
-            <div className="px-2 flex justify-between items-end pt-0">
-              <div>
-                <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 uppercase italic leading-none">Laporan Cloud</h2>
-                <p className="text-[10px] font-bold text-blue-600 uppercase mt-2 tracking-widest flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${loading ? 'bg-amber-500 animate-pulse' : 'bg-green-500'}`}></span>
-                  {loading ? "Sinkronisasi..." : "Terhubung"}
-                </p>
-              </div>
-              <button onClick={fetchData} className="p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-blue-600 shadow-sm active:scale-90 transition-all">
-                <TrendingUp size={20} className={loading ? "animate-spin" : ""} />
-              </button>
-            </div>
-            <div className="space-y-4">
-              {allDates.length > 0 ? (
-                allDates.map((dateStr) => (
-                  <ReportTable 
-                    key={dateStr} 
-                    tanggal={formatTanggalIndonesia(dateStr)} 
-                    isToday={dateStr === normalizeDate(selectedDate)}
-                    data={chainedArchive[dateStr]}
-                    onDelete={() => deleteData(dateStr)} 
-                  />
-                ))
-              ) : (
-                <div className="text-center py-24 opacity-30">
-                  <FileText size={48} className="mx-auto mb-4" />
-                  <p className="font-black uppercase text-[10px] tracking-widest">Belum Ada Data</p>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-
-      case 'Stok':
-        return (
-          /* Fokus perubahan: space-y-1 & pt-0 */
-          <div className="space-y-1">
-            <div className="px-2 pt-0">
-              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-0.5">Entry Manager</p>
-              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 italic leading-tight">{formatTanggalIndonesia(selectedDate)}</h3>
-            </div>
-            <StockView 
-              key={selectedDate} 
-              data={currentData} 
-              onSave={updateStockData} 
-              selectedDate={selectedDate}
-              setSelectedDate={setSelectedDate}
-            />
-          </div>
-        );
-
-      case 'Home':
-        const summaryStok = currentData.reduce((a, b) => a + (Number(b.sisaKemarin) + Number(b.stokBaru)), 0);
-        const summarySisa = currentData.reduce((a, b) => a + Number(b.sisa), 0);
-        return (
-          <div className="space-y-6 px-2 pt-0 animate-in slide-in-from-bottom-4 duration-500">
-            <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 uppercase italic">Dashboard</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-blue-600 rounded-[2.5rem] p-6 text-white shadow-xl shadow-blue-500/30">
-                <TrendingUp size={28} className="mb-4 opacity-50" />
-                <p className="text-[10px] font-bold uppercase opacity-70 tracking-widest">Siap Jual</p>
-                <h3 className="text-3xl font-black">{summaryStok}</h3>
-              </div>
-              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2.5rem] p-6 shadow-sm">
-                <Package size={28} className="mb-4 text-blue-500 opacity-50" />
-                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Sisa Rak</p>
-                <h3 className="text-3xl font-black text-slate-800 dark:text-slate-100">{summarySisa}</h3>
-              </div>
-            </div>
-          </div>
-        );
-
-      default:
-        return <div className="mt-40 text-center text-slate-400 font-black uppercase text-[10px] tracking-widest animate-pulse">Segera Hadir</div>;
-    }
-  };
-
   return (
-    <div className="min-h-screen w-full bg-[#f8fafc] dark:bg-[#020617] font-sans tracking-tight">
-      <header className="fixed top-0 left-0 right-0 z-[100] bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl px-6 py-4 border-b border-slate-100 dark:border-slate-900 pt-[env(safe-area-inset-top,1rem)]">
-        <div className="max-w-md mx-auto flex justify-between items-center">
+    <div className="fixed inset-0 flex w-full h-[100dvh] bg-[#f8fafc] dark:bg-[#020617] font-sans tracking-tight overflow-hidden transition-colors duration-500 transform-gpu">
+      
+      {/* SIDEBAR DESKTOP */}
+      <aside className="hidden md:flex flex-col w-72 border-r border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl z-[100]">
+        <div className="p-6 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/20">AF</div>
-            <div>
-              <h1 className="text-base font-black text-slate-800 dark:text-slate-100 italic tracking-tighter">Fafifa <span className="text-blue-600">Cloud</span></h1>
-              <p className="text-[9px] text-green-500 font-black uppercase tracking-[0.2em]">● Live Database</p>
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-lg">
+              <Activity size={24} strokeWidth={2.5} />
             </div>
-          </div>
-          <div className="p-2.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <Bell size={18} className="text-slate-400" />
+            <div>
+              <h1 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tighter">FaFiFa<span className="text-sky-500">_Report</span></h1>
+              <p className="text-[10px] text-green-500 font-black uppercase tracking-[0.2em]">● Live Database</p>
+            </div>
           </div>
         </div>
-      </header>
-      <div className="max-w-md mx-auto relative">
-        {/* PERUBAHAN UTAMA: Ubah pt-28 menjadi pt-[72px] (melekat pada header) */}
-        <main className="p-4 pt-[72px] pb-40">
-          {renderContent()}
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          {menuItems.map((item) => (
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all font-bold ${activeTab === item.id ? 'bg-blue-600 shadow-lg text-white' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}>
+              {item.icon} <span className="text-sm tracking-wide">{item.label}</span>
+            </button>
+          ))}
+          
+          <button onClick={() => setActiveTab('Master')} className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl font-bold mt-8 border border-dashed transition-all ${activeTab === 'Master' ? 'bg-slate-800 text-blue-400 border-blue-500' : 'text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900'}`}>
+            <Grip size={22} /> <span className="text-sm tracking-wide">Pusat Kendali</span>
+          </button>
+        </nav>
+      </aside>
+
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        
+        {/* HEADER UTAMA */}
+        <Header activeTab={activeTab} setActiveTab={setActiveTab} loading={loading} />
+
+        <main className={`flex-1 overflow-y-auto custom-scrollbar md:pt-6 pb-32 md:pb-12 max-w-5xl w-full mx-auto ${activeTab === 'Home' ? 'pt-[64px] px-0' : 'pt-[68px] px-4'}`}>
+          {renderedTabs['Home'] && (
+            <div className={activeTab === 'Home' ? 'block' : 'hidden'}>
+              <Dashboard {...commonProps} />
+            </div>
+          )}
+          {renderedTabs['Produksi'] && (
+            <div className={activeTab === 'Produksi' ? 'block' : 'hidden'}>
+              <ProductionPage {...commonProps} />
+            </div>
+          )}
+          {renderedTabs['Laporan'] && (
+            <div className={activeTab === 'Laporan' ? 'block' : 'hidden'}>
+              <ReportPage {...commonProps} />
+            </div>
+          )}
+          {renderedTabs['Analisa'] && (
+            <div className={activeTab === 'Analisa' ? 'block' : 'hidden'}>
+              <AnalisaPage {...commonProps} />
+            </div>
+          )}
+          {renderedTabs['Master'] && (
+            <div className={activeTab === 'Master' ? 'block' : 'hidden'}>
+              <MasterPage {...commonProps} setActiveTab={setActiveTab} />
+            </div>
+          )}
         </main>
       </div>
+
       <BottomNav menuItems={menuItems} activeTab={activeTab} setActiveTab={setActiveTab} />
+      <VisitInput onSave={onSaveKunjungan} />
+
+      {/* OVERLAY LOADING */}
+      <AnimatePresence>
+        {loading && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/30 dark:bg-black/50 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="flex flex-col items-center gap-4"
+            >
+              <div className="relative flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full border-[3px] border-white/40 dark:border-slate-600/50"></div>
+                <div className="w-12 h-12 rounded-full border-[3px] border-sky-500 border-t-transparent animate-spin absolute top-0 left-0"></div>
+                <Activity size={18} className="text-sky-500 absolute animate-pulse" />
+              </div>
+              <p className="text-[10px] font-black tracking-widest text-slate-800 dark:text-slate-100 uppercase drop-shadow-md">
+                Menyinkronkan
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 🔥 KOTAK DIALOG KELUAR APLIKASI 🔥 */}
+      <AnimatePresence>
+        {showExitConfirm && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm px-6"
+            onClick={() => setShowExitConfirm(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl w-full max-w-sm border border-slate-200 dark:border-slate-800"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 bg-rose-100 dark:bg-rose-900/30 text-rose-500 rounded-2xl flex items-center justify-center mb-4 shadow-inner">
+                  <LogOut size={32} strokeWidth={2.5} className="-ml-1" />
+                </div>
+                <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2 uppercase tracking-tighter">Keluar Aplikasi?</h3>
+                <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
+                  Anda yakin ingin keluar dari FaFiFa Report? <br/><span className="text-rose-500">Tekan "Kembali" sekali lagi untuk keluar langsung.</span>
+                </p>
+                
+                <div className="flex w-full gap-3">
+                  <button 
+                    onClick={() => {
+                      setShowExitConfirm(false);
+                      // Mengembalikan riwayat agar back button sistem kembali netral
+                      window.history.pushState({ page: 'fafifa-app' }, '', window.location.href);
+                    }}
+                    className="flex-1 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowExitConfirm(false);
+                      window.history.go(-2); // Paksa exit browser/PWA jika ditekan tombol "Keluar"
+                    }}
+                    className="flex-1 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest bg-rose-500 text-white shadow-lg shadow-rose-500/30 hover:bg-rose-600 transition-all flex items-center justify-center gap-2"
+                  >
+                    Keluar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
