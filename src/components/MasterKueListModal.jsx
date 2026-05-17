@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { ChevronLeft, Plus, LayoutList, Trash2, Edit3, Check, X, Database, Eye, EyeOff } from 'lucide-react';
 import ConfirmDialog from './ConfirmDialog';
 
+// ============================================================================
+// 🧠 MEMOIZED MASTER KUE LIST MODAL COMPONENT
+// ============================================================================
 const MasterKueListModal = ({ priceList, hiddenKueList = [], onToggleHideKue, onClose, onAddNewClick, onDeleteKue, onUpdateKue }) => {
   const [editingKey, setEditingKey] = useState(null);
   const [editForm, setEditForm] = useState({ jenisKue: '', harga: '' });
@@ -21,44 +24,64 @@ const MasterKueListModal = ({ priceList, hiddenKueList = [], onToggleHideKue, on
 
   const kueArray = useMemo(() => Object.entries(priceList), [priceList]);
 
-  const handleStartEdit = (nama, harga) => {
+  // --- 🔥 MEMOIZED HANDLERS PIPELINE (Strict Reference Memory Guard) 🔥 ---
+  const handleStartEdit = useCallback((nama, harga) => {
     setEditingKey(nama);
     setEditForm({ jenisKue: nama, harga: harga });
-  };
+  }, []);
 
-  const handleCancelEdit = () => {
+  const handleCancelEdit = useCallback(() => {
     setEditingKey(null);
-  };
+  }, []);
 
-  const handleSaveEdit = (oldName) => {
-    if (!editForm.jenisKue.trim() || isNaN(editForm.harga) || editForm.harga < 0) return;
-    onUpdateKue(oldName, editForm);
-    setEditingKey(null);
-  };
+  const handleSaveEdit = useCallback((oldName) => {
+    // Membaca snapshot state terbaru secara terisolasi tanpa memicu re-creation
+    setEditForm(currentForm => {
+      if (currentForm.jenisKue.trim() && !isNaN(currentForm.harga) && currentForm.harga >= 0) {
+        onUpdateKue(oldName, currentForm);
+        setEditingKey(null);
+      }
+      return currentForm;
+    });
+  }, [onUpdateKue]);
 
-  const handleKeyDown = (e, oldName) => {
+  const handleKeyDown = useCallback((e, oldName) => {
     if (e.key === 'Enter') handleSaveEdit(oldName);
     if (e.key === 'Escape') handleCancelEdit();
-  };
+  }, [handleSaveEdit, handleCancelEdit]);
 
-  const triggerDelete = (nama) => {
+  const triggerDelete = useCallback((nama) => {
     setKueToDel(nama);
     setIsDelOpen(true);
-  };
+  }, []);
 
-  const closeWithAnimation = () => {
+  const closeWithAnimation = useCallback(() => {
     setIsMounted(false);
-    setTimeout(() => {
+    const t = setTimeout(() => {
       onClose(); 
     }, 300);
-  };
+    return () => clearTimeout(t);
+  }, [onClose]);
 
-  const addKueWithAnimation = () => {
+  const addKueWithAnimation = useCallback(() => {
     setIsMounted(false);
-    setTimeout(() => {
+    const t = setTimeout(() => {
       onAddNewClick();
     }, 300);
-  };
+    return () => clearTimeout(t);
+  }, [onAddNewClick]);
+
+  // Handler Pengetikan Nama Kue Terisolasi RAM
+  const handleEditJenisKueChange = useCallback((e) => {
+    const val = e.target.value;
+    setEditForm(prev => ({ ...prev, jenisKue: val }));
+  }, []);
+
+  // Handler Pengetikan Harga Kue Terisolasi RAM
+  const handleEditHargaChange = useCallback((e) => {
+    const val = e.target.value;
+    setEditForm(prev => ({ ...prev, harga: val }));
+  }, []);
 
   return (
     <div 
@@ -68,17 +91,14 @@ const MasterKueListModal = ({ priceList, hiddenKueList = [], onToggleHideKue, on
     >
       
       {/* 🚀 HEADER UTAMA (FULL WIDTH 100% LAYAR & STICKY TOP) 🚀 */}
-      {/* Pembungkus header dilepas dari max-w supaya warnanya memanjang penuh */}
       <div className="w-full shrink-0 pt-[70px] md:pt-6 lg:pt-8 pb-3 md:pb-4 bg-[#f8fafc]/90 dark:bg-[#020617]/90 backdrop-blur-xl border-b border-slate-200/60 dark:border-slate-800/60 shadow-sm relative z-30 px-4">
-        
         <div className="absolute -top-20 left-0 right-0 h-20 bg-[#f8fafc] dark:bg-[#020617]"></div>
 
-        {/* Konten Header diselaraskan dengan lebar tabel */}
         <div className="max-w-md md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto flex items-center justify-between relative z-10">
           <div className="flex items-center gap-3 md:gap-4">
             <button 
               onClick={closeWithAnimation}
-              className="p-2.5 md:p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 active:scale-90 transition-all shadow-sm"
+              className="p-2.5 md:p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 active:scale-90 transition-all shadow-sm"
             >
               <ChevronLeft size={20} />
             </button>
@@ -106,11 +126,10 @@ const MasterKueListModal = ({ priceList, hiddenKueList = [], onToggleHideKue, on
       {/* 🖥️ KOTAK KONTEN UTAMA (Tabel & Scroll Area) */}
       <div className="flex flex-col flex-1 w-full max-w-md md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto relative px-4 pb-32 md:pb-8 mt-4 md:mt-5 overflow-hidden">
         
-        {/* AREA SCROLLABLE */}
         <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 relative z-10">
           <div className="bg-white dark:bg-slate-900 rounded-[1.5rem] md:rounded-[2rem] border border-slate-100 dark:border-slate-800 overflow-hidden shadow-sm mb-4">
             
-            {/* 🎯 JUDUL TABEL STICKY DENGAN WARNA SOFT 🎯 */}
+            {/* JUDUL TABEL STICKY */}
             <div className="flex items-center px-4 md:px-8 py-3 md:py-4 bg-indigo-50/95 dark:bg-slate-800/95 backdrop-blur-md border-b border-indigo-100/50 dark:border-slate-700 sticky top-0 z-30 transition-colors">
               <div className="w-8 md:w-16 text-[10px] md:text-[11px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-widest shrink-0">No</div>
               <div className="flex-1 text-[10px] md:text-[11px] font-black text-indigo-500 dark:text-indigo-400 uppercase tracking-widest px-2 min-w-0">Nama Kue</div>
@@ -140,7 +159,7 @@ const MasterKueListModal = ({ priceList, hiddenKueList = [], onToggleHideKue, on
                             className="w-full bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-800 rounded-md md:rounded-lg px-2 py-1.5 md:py-2 text-[13px] md:text-[14px] font-black outline-none focus:ring-2 focus:ring-blue-500/20"
                             value={editForm.jenisKue}
                             onKeyDown={(e) => handleKeyDown(e, namaKue)}
-                            onChange={(e) => setEditForm({...editForm, jenisKue: e.target.value})}
+                            onChange={handleEditJenisKueChange}
                           />
                         </div>
                         <div className="w-24 md:w-32 ml-2 flex items-center bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-800 rounded-md md:rounded-lg px-2 shrink-0">
@@ -150,7 +169,7 @@ const MasterKueListModal = ({ priceList, hiddenKueList = [], onToggleHideKue, on
                             className="w-full bg-transparent py-1.5 md:py-2 text-[13px] md:text-[14px] font-black text-right outline-none min-w-0"
                             value={editForm.harga}
                             onKeyDown={(e) => handleKeyDown(e, namaKue)}
-                            onChange={(e) => setEditForm({...editForm, harga: e.target.value})}
+                            onChange={handleEditHargaChange}
                           />
                         </div>
                         <div className="w-24 md:w-28 ml-2 flex justify-end md:justify-center gap-1 shrink-0">
@@ -199,7 +218,7 @@ const MasterKueListModal = ({ priceList, hiddenKueList = [], onToggleHideKue, on
           </div>
         </div>
 
-        {/* TOMBOL TAMBAH MENU (KHUSUS MOBILE, DI DESKTOP DI-HIDE) */}
+        {/* TOMBOL TAMBAH MENU PANELS MOBILE */}
         <div className="md:hidden shrink-0 pt-4 relative z-0">
           <div className="absolute -top-10 left-0 right-0 h-10 bg-gradient-to-t from-[#f8fafc] dark:from-[#020617] to-transparent pointer-events-none"></div>
           <button 
@@ -229,4 +248,5 @@ const MasterKueListModal = ({ priceList, hiddenKueList = [], onToggleHideKue, on
   );
 };
 
-export default MasterKueListModal;
+// 🔥 SINKRONISASI AKHIR PERFORMA TINGGI: Kunci Siklus Menggunakan React.memo 🔥
+export default React.memo(MasterKueListModal);

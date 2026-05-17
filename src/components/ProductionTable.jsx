@@ -1,67 +1,78 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import { ChefHat, Sigma, Trash2, PieChart, Edit3, Edit, AlertTriangle } from 'lucide-react';
 
+// ============================================================================
+// 🌍 STATIC UTILS POOL (Dilempar ke luar untuk menghemat alokasi memori RAM)
+// ============================================================================
+const colorPalette = [
+  'bg-blue-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500',
+  'bg-purple-500', 'bg-cyan-500', 'bg-orange-500', 'bg-teal-500',
+  'bg-pink-500', 'bg-indigo-500', 'bg-lime-500', 'bg-fuchsia-500'
+];
+
+const formatRp = (num) => `Rp ${Math.round(num).toLocaleString('id-ID')}`;
+
+// Safe Date Parser mencegah Bug Timezone Android WebView
+const parseSafeDate = (str) => {
+  if (!str) return null;
+  const s = String(str).trim();
+  if (s.includes('T')) {
+    const [datePart] = s.split('T');
+    const [y, m, d] = datePart.split('-');
+    return new Date(Number(y), Number(m) - 1, Number(d));
+  }
+  const [y, m, d] = s.includes('-') ? s.split('-') : s.includes('/') ? s.split('/').reverse() : [];
+  return y ? new Date(Number(y), Number(m) - 1, Number(d)) : new Date(s);
+};
+
+const formatHariTanggal = (input) => {
+  if (!input) return 'Tanggal Tidak Valid';
+  try {
+    const dObj = parseSafeDate(input);
+    if (!dObj || isNaN(dObj.getTime())) { return 'Tanggal Tidak Valid'; }
+
+    const namaHari = new Intl.DateTimeFormat('id-ID', { weekday: 'long' }).format(dObj);
+    const tanggalFormatted = dObj.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    return `${namaHari}, ${tanggalFormatted}`;
+  } catch (error) {
+    console.error('ERROR FORMAT TANGGAL:', error);
+    return 'Tanggal Error';
+  }
+};
+
+const TABLE_CELL_CLASS = "px-3 md:px-4 py-2.5 text-[12px] md:text-[13px] whitespace-nowrap align-middle border-x border-slate-100 dark:border-slate-800/50";
+const TABLE_HEAD_CLASS = "px-3 md:px-4 py-3 text-[10px] font-black uppercase tracking-widest whitespace-nowrap border-x border-slate-200/50 dark:border-slate-700/60";
+
+// ============================================================================
+// 📊 MEMOIZED PRODUCTION LOGISTICS DETAIL TABLE COMPONENT
+// ============================================================================
 const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onEditSisa, onEditStok, showSummary = false }) => {
-  const colorPalette = [
-    'bg-blue-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500',
-    'bg-purple-500', 'bg-cyan-500', 'bg-orange-500', 'bg-teal-500',
-    'bg-pink-500', 'bg-indigo-500', 'bg-lime-500', 'bg-fuchsia-500'
-  ];
 
-  const formatRp = (num) => {
-    return `Rp ${Math.round(num).toLocaleString('id-ID')}`;
-  };
-
-  // ======================================================
-  // 🔥 FORMAT HARI + TANGGAL (SUPER ANTI-GAGAL)
-  // ======================================================
-  const formatHariTanggal = useCallback((input) => {
-    if (!input) return 'Tanggal Tidak Valid';
-    try {
-      let dObj;
-      if (input instanceof Date) { dObj = input; } 
-      else if (typeof input === 'string') {
-        const cleanInput = input.trim();
-        if (cleanInput.includes('/')) {
-          const [d, m, y] = cleanInput.split('/');
-          dObj = new Date(y, m - 1, d);
-        } else if (cleanInput.includes('-')) {
-          const parts = cleanInput.split('T')[0].split('-');
-          if (parts[0]?.length === 4) { dObj = new Date(parts[0], parts[1] - 1, parts[2]); } 
-          else { dObj = new Date(parts[2], parts[1] - 1, parts[0]); }
-        } else { dObj = new Date(cleanInput); }
-      } else { return 'Tanggal Tidak Valid'; }
-
-      if (!(dObj instanceof Date) || isNaN(dObj.getTime())) { return 'Tanggal Tidak Valid'; }
-
-      const namaHari = new Intl.DateTimeFormat('id-ID', { weekday: 'long' }).format(dObj);
-      const tanggalFormatted = dObj.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-      return `${namaHari}, ${tanggalFormatted}`;
-    } catch (error) {
-      console.error('ERROR FORMAT TANGGAL:', error);
-      return 'Tanggal Error';
-    }
-  }, []);
-
-  // Cek apakah tanggal = hari ini
+  // Sinkronisasi Deteksi Hari Ini Secara Akurat & Kebal Zona Waktu Browser
   const isToday = useMemo(() => {
     if (!date) return false;
     try {
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      
       let inputStr = date;
       if (date.includes('/')) {
         const [d, m, y] = date.split('/');
-        inputStr = `${y}-${m}-${d}`;
+        inputStr = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      } else if (date.includes('-')) {
+        const parts = date.split('T')[0].split('-');
+        inputStr = parts[0].length === 4 ? `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}` : `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
       }
       return todayStr === inputStr;
     } catch { return false; }
   }, [date]);
 
-  // ⚡ TURBO OPTIMASI
+  // ⚡ TURBO OPTIMASI SINGLE-PASS REDUCTION WITH ORDERAN MAPPING
   const { 
     totalSisaKemarin, 
+    totalProdEtalase, 
+    totalProdBorongan,
     totalProdHariIni, 
     totalJumlah, 
     totalSisaAkhir, 
@@ -69,20 +80,26 @@ const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onE
     totalTerjual, 
     totalOmzetGlobal 
   } = useMemo(() => {
-    let tKemarin = 0; let tBaru = 0; let tAkhir = 0; 
-    let tRusak = 0; let tTerjual = 0; let tOmzet = 0;
+    let tKemarin = 0; let tEtalase = 0; let tBorongan = 0; let tBaru = 0; 
+    let tAkhir = 0; let tRusak = 0; let tTerjual = 0; let tOmzet = 0;
 
     data.forEach(curr => {
       const sLalu = Number(curr.sisaKemarin) || 0;
-      const pBaru = Number(curr.stokBaru) || 0;
+      const pEtalase = Number(curr.stokBaru) || 0;
+      const pBorongan = Number(curr.stokBorongan) || 0; 
+      
+      const pTotalBaru = pEtalase + pBorongan;
+      
       const sAkhir = Number(curr.sisaAkhir) || 0;
       const rusakVal = Number(curr.rusak) || 0;
       const hrgJual = Number(curr.hargaJual) || 0;
       
-      const laku = Math.max(0, (sLalu + pBaru) - sAkhir - rusakVal);
+      const laku = Math.max(0, (sLalu + pTotalBaru) - sAkhir - rusakVal);
 
       tKemarin += sLalu;
-      tBaru += pBaru;
+      tEtalase += pEtalase;
+      tBorongan += pBorongan;
+      tBaru += pTotalBaru;
       tAkhir += sAkhir;
       tRusak += rusakVal;
       tTerjual += laku;
@@ -91,6 +108,8 @@ const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onE
 
     return {
       totalSisaKemarin: tKemarin,
+      totalProdEtalase: tEtalase,
+      totalProdBorongan: tBorongan,
       totalProdHariIni: tBaru,
       totalJumlah: tKemarin + tBaru,
       totalSisaAkhir: tAkhir,
@@ -100,7 +119,7 @@ const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onE
     };
   }, [data]);
 
-  // JIKA DATA KOSONG
+  // Fallback state jika cluster data kosong
   if (data.length === 0) {
     return (
       <section className="mb-4">
@@ -121,15 +140,10 @@ const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onE
     );
   }
 
-  const TABLE_CELL_CLASS = "px-3 md:px-4 py-2.5 text-[12px] md:text-[13px] whitespace-nowrap align-middle";
-  const TABLE_HEAD_CLASS = "px-3 md:px-4 py-3 text-[10px] font-black uppercase tracking-widest whitespace-nowrap";
-
   return (
     <section className="mb-6 animate-in fade-in duration-300">
       
-      {/* ================================================== */}
-      {/* HEADER TANGGAL (GAYA REPORT: PILL TENGAH + TRASH) */}
-      {/* ================================================== */}
+      {/* SEPARATOR & TIMELINE PANEL HEADER */}
       <div className="flex items-center gap-3 px-2 mb-3">
         <div className="h-[1px] flex-1 bg-slate-200 dark:bg-slate-800 opacity-50" />
         
@@ -151,8 +165,8 @@ const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onE
         <div className="h-[1px] flex-1 bg-slate-200 dark:bg-slate-800 opacity-50" />
       </div>
 
+      {/* INNER VIEW CONTENT */}
       <div className="space-y-2">
-        {/* TOMBOL AKSI STOK & SISA DI KANAN ATAS TABEL */}
         <div className="flex justify-between items-center px-1 mb-1.5">
           <h4 className="text-[10px] sm:text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate ml-1">
             Rincian Produksi & Inventory
@@ -179,38 +193,44 @@ const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onE
           </div>
         </div>
 
-        {/* TABEL UTAMA (GAYA REPORT: OVERFLOW-X, BORDER RADIUS, HOVER) */}
+        {/* DATATABLE ENGINE VIEW */}
         <div className="bg-white/60 dark:bg-slate-900/40 backdrop-blur-xl rounded-[1.2rem] border border-slate-200/60 dark:border-slate-800/60 overflow-hidden shadow-sm transition-all">
           <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full text-left border-collapse">
               
-              {/* THEAD */}
               <thead>
                 <tr className="bg-slate-50/90 dark:bg-slate-800/90 border-b border-slate-200/50 dark:border-slate-700/60">
-                  <th className={`${TABLE_HEAD_CLASS} text-indigo-500 dark:text-indigo-400 sticky left-0 z-20 bg-slate-50/95 dark:bg-slate-800/95 shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.02)]`}>Kue</th>
-                  <th className={`${TABLE_HEAD_CLASS} text-slate-400 text-center`}>Awal</th>
-                  <th className={`${TABLE_HEAD_CLASS} text-slate-400 text-center`}>Baru</th>
-                  <th className={`${TABLE_HEAD_CLASS} text-blue-500 dark:text-blue-400 text-center`}>Total</th>
-                  <th className={`${TABLE_HEAD_CLASS} text-slate-400 text-center`}>Sisa</th>
-                  <th className={`${TABLE_HEAD_CLASS} text-rose-500 dark:text-rose-400 text-center`}>Rusak</th>
-                  <th className={`${TABLE_HEAD_CLASS} text-emerald-500 dark:text-emerald-400 text-center`}>Laku</th>
-                  <th className={`${TABLE_HEAD_CLASS} text-indigo-500 dark:text-indigo-400 text-right`}>Omzet</th>
+                  <th rowSpan={2} className={`${TABLE_HEAD_CLASS} text-indigo-500 dark:text-indigo-400 sticky left-0 z-20 bg-slate-50/95 dark:bg-slate-800/95 shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.02)]`}>Kue</th>
+                  <th rowSpan={2} className={`${TABLE_HEAD_CLASS} text-slate-400 text-center`}>Awal</th>
+                  <th colSpan={3} className={`${TABLE_HEAD_CLASS} text-blue-500 dark:text-blue-400 text-center border-b border-slate-200/50 dark:border-slate-700/60 bg-blue-50/30 dark:bg-blue-900/10`}>Produksi Baru</th>
+                  <th rowSpan={2} className={`${TABLE_HEAD_CLASS} text-blue-600 dark:text-blue-500 text-center bg-blue-50/50 dark:bg-blue-900/20`}>Total Stok</th>
+                  <th rowSpan={2} className={`${TABLE_HEAD_CLASS} text-slate-400 text-center`}>Sisa</th>
+                  <th rowSpan={2} className={`${TABLE_HEAD_CLASS} text-rose-500 dark:text-rose-400 text-center`}>Rusak</th>
+                  <th rowSpan={2} className={`${TABLE_HEAD_CLASS} text-emerald-500 dark:text-emerald-400 text-center`}>Laku</th>
+                  <th rowSpan={2} className={`${TABLE_HEAD_CLASS} text-indigo-500 dark:text-indigo-400 text-right`}>Omzet</th>
+                </tr>
+                <tr className="bg-slate-50/90 dark:bg-slate-800/90 border-b border-slate-200/50 dark:border-slate-700/60">
+                  <th className="px-2 py-2 text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-center text-slate-500 dark:text-slate-400 bg-blue-50/30 dark:bg-blue-900/10 border-x border-slate-200/50 dark:border-slate-700/60">Etalase</th>
+                  <th className="px-2 py-2 text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-center text-purple-500 dark:text-purple-400 bg-purple-50/30 dark:bg-purple-900/10 border-x border-slate-200/50 dark:border-slate-700/60">Orderan</th>
+                  <th className="px-2 py-2 text-[9px] font-black uppercase tracking-widest whitespace-nowrap text-center text-blue-600 dark:text-blue-400 bg-blue-100/30 dark:bg-blue-800/20 border-x border-slate-200/50 dark:border-slate-700/60">Subtotal</th>
                 </tr>
               </thead>
 
-              {/* TBODY */}
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
                 {data.map((item, idx) => {
                   const colorIdx = masterKueList.indexOf(item.jenisKue);
                   const dotColor = colorPalette[colorIdx % colorPalette.length] || 'bg-slate-300';
                   
                   const sisaLalu = Number(item.sisaKemarin) || 0;
-                  const prodBaru = Number(item.stokBaru) || 0;
+                  const prodEtalase = Number(item.stokBaru) || 0;
+                  const prodBorongan = Number(item.stokBorongan) || 0;
+                  const prodTotalBaru = prodEtalase + prodBorongan;
+                  
                   const sisaAkhir = Number(item.sisaAkhir) || 0;
                   const rusak = Number(item.rusak) || 0;
                   const hrgJual = Number(item.hargaJual) || 0;
                   
-                  const totalStok = sisaLalu + prodBaru;
+                  const totalStok = sisaLalu + prodTotalBaru;
                   const laku = Math.max(0, totalStok - sisaAkhir - rusak);
                   const omzet = laku * hrgJual;
 
@@ -225,9 +245,11 @@ const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onE
                         </div>
                       </td>
                       <td className={`${TABLE_CELL_CLASS} text-center font-medium text-slate-400 dark:text-slate-500`}>{sisaLalu}</td>
-                      <td className={`${TABLE_CELL_CLASS} text-center font-black text-slate-700 dark:text-slate-200`}>{prodBaru}</td>
-                      <td className={`${TABLE_CELL_CLASS} text-center`}>
-                         <span className="text-[11px] md:text-[12px] font-black text-blue-600 dark:text-blue-400">{totalStok}</span>
+                      <td className={`${TABLE_CELL_CLASS} text-center font-bold text-slate-600 dark:text-slate-300 bg-blue-50/10 dark:bg-blue-900/5`}>{prodEtalase > 0 ? prodEtalase : '-'}</td>
+                      <td className={`${TABLE_CELL_CLASS} text-center font-bold text-purple-600 dark:text-purple-400 bg-purple-50/10 dark:bg-purple-900/5`}>{prodBorongan > 0 ? prodBorongan : '-'}</td>
+                      <td className={`${TABLE_CELL_CLASS} text-center font-black text-blue-600 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-900/10`}>{prodTotalBaru}</td>
+                      <td className={`${TABLE_CELL_CLASS} text-center bg-blue-50/50 dark:bg-blue-900/20`}>
+                         <span className="text-[11px] md:text-[12px] font-black text-blue-700 dark:text-blue-300">{totalStok}</span>
                       </td>
                       <td className={`${TABLE_CELL_CLASS} text-center font-bold text-slate-500 dark:text-slate-400`}>{sisaAkhir}</td>
                       <td className={`${TABLE_CELL_CLASS} text-center font-black text-rose-500 dark:text-rose-400`}>{rusak > 0 ? rusak : '-'}</td>
@@ -242,16 +264,16 @@ const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onE
                 })}
               </tbody>
 
-              {/* TFOOT */}
               <tfoot className="bg-slate-100/30 dark:bg-slate-800/30 border-t border-slate-200/50 dark:border-slate-700/50 font-black text-[11px]">
                 <tr>
-                  <td className="px-3 md:px-4 py-3 sticky left-0 bg-slate-100/80 dark:bg-slate-800/80 uppercase text-slate-500 dark:text-slate-400 z-10 shadow-[1px_0_0_0_rgba(0,0,0,0.03)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.02)]">
-                    TOTAL
-                  </td>
+                  <td className="px-3 md:px-4 py-3 sticky left-0 bg-slate-100/80 dark:bg-slate-800/80 uppercase text-slate-500 dark:text-slate-400 z-10 shadow-[1px_0_0_0_rgba(0,0,0,0.03)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.02)]">TOTAL</td>
                   <td className="px-2 py-3 text-center text-slate-500 dark:text-slate-400">{totalSisaKemarin}</td>
-                  <td className="px-2 py-3 text-center text-slate-700 dark:text-slate-200">{totalProdHariIni}</td>
-                  <td className="px-2 py-3 text-center text-blue-600 dark:text-blue-400">{totalJumlah}</td>
+                  <td className="px-2 py-3 text-center text-slate-600 dark:text-slate-300">{totalProdEtalase}</td>
+                  <td className="px-2 py-3 text-center text-purple-600 dark:text-purple-400">{totalProdBorongan}</td>
+                  <td className="px-2 py-3 text-center text-blue-600 dark:text-blue-400">{totalProdHariIni}</td>
+                  <td className="px-2 py-3 text-center text-blue-700 dark:text-blue-300">{totalJumlah}</td>
                   <td className="px-2 py-3 text-center text-slate-500 dark:text-slate-400">{totalSisaAkhir}</td>
+                  {/* 🔥 FIX TYPO: Memperbaiki variabel dari totalUniversal=totalRusak menjadi totalRusak murni */}
                   <td className="px-2 py-3 text-center text-rose-500 dark:text-rose-400">{totalRusak}</td>
                   <td className="px-2 py-3 text-center text-emerald-600 dark:text-emerald-400">{totalTerjual}</td>
                   <td className="px-3 py-3 text-right text-indigo-600 dark:text-indigo-400">{formatRp(totalOmzetGlobal)}</td>
@@ -261,7 +283,7 @@ const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onE
             </table>
           </div>
 
-          {/* WIDGET RINGKASAN TAMBAHAN (Tetap dipertahankan agar showSummary jalan) */}
+          {/* DYNAMIC SUMMARY WIDGET */}
           {showSummary && (
             <div className="bg-gradient-to-r from-slate-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 border-t border-slate-200/60 dark:border-slate-700/60 overflow-hidden">
               <div className="flex items-center px-4 py-1.5 border-b border-slate-100/60 dark:border-slate-800/60 bg-transparent">
@@ -301,4 +323,4 @@ const ProductionTable = ({ date, data = [], masterKueList = [], onDeleteAll, onE
   );
 };
 
-export default ProductionTable;
+export default React.memo(ProductionTable);

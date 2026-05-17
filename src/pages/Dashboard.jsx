@@ -7,89 +7,110 @@ import {
 } from 'lucide-react';
 import { useDashboardStats } from '../hooks/useDashboardStats'; 
 
+// ============================================================================
+// 🌍 STATIC CONFIGURATION POOL (Dibuat di luar agar Bebas Alokasi Memori RAM Ulang)
+// ============================================================================
+const MONTHS_LIST = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+];
+
+const DONUT_COLORS_PALETTE = [
+  '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', 
+  '#6366f1', '#ec4899', '#14b8a6', '#eab308', '#f43f5e', '#84cc16'
+];
+
+const DONUT_RADIUS = 38; 
+const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
+
+const getLocalTodayString = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+// ============================================================================
+// 🧠 MEMOIZED DASHBOARD COMPONENT INTERFACE
+// ============================================================================
 const Dashboard = ({ 
   archiveData, sisaArchive, priceList, bahanList, resepData, targetYieldData, 
-  normalizeDate, selectedDate, formatTanggal, visitData,
-  setIsSubViewOpen // 👈 DITAMBAHKAN UNTUK SINKRONISASI TOMBOL BACK
+  normalizeDate, formatTanggal, visitData,
+  setIsSubViewOpen 
 }) => {
 
-  // 🔥 FUNGSI AMBIL TANGGAL LOKAL PERANGKAT (ANTI-MELESET ZONA WAKTU)
-  const getLocalToday = () => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  // 🚀 BERDIRI SENDIRI: Default selalu hari ini di perangkat, tidak peduli page lain
-  const [localDate, setLocalDate] = useState(getLocalToday);
-  
-  // 🔥 UBAH DEFAULT FILTER KE 'bulan'
+  const [localDate, setLocalDate] = useState(getLocalTodayString);
   const [filterMode, setFilterMode] = useState('bulan'); 
   const [selectedMonthIdx, setSelectedMonthIdx] = useState(() => new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [pickerType, setPickerType] = useState(null); 
-  const [startDate, setStartDate] = useState(() => `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`);
-  const [endDate, setEndDate] = useState(() => localDate);
+  
+  const [startDate, setStartDate] = useState(() => {
+    return `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [endDate, setEndDate] = useState(localDate);
 
   const [isMounted, setIsMounted] = useState(false);
 
-  const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  const years = Array.from({length: 5}, (_, i) => new Date().getFullYear() - 2 + i); 
+  // Generasikan list tahun secara dinamis sekali saja di awal mount
+  const yearsOptions = useMemo(() => {
+    const currentY = new Date().getFullYear();
+    return Array.from({ length: 5 }, (_, i) => currentY - 2 + i);
+  }, []);
 
   useEffect(() => { setIsMounted(true); }, []);
 
-  // 👇 SINKRONISASI MODAL PICKER KE APP.JS (MENCEGAH KELUAR APLIKASI SAAT DI-BACK) 👇
   useEffect(() => {
-    if (setIsSubViewOpen) {
-      setIsSubViewOpen(pickerType !== null);
-    }
+    if (setIsSubViewOpen) setIsSubViewOpen(pickerType !== null);
   }, [pickerType, setIsSubViewOpen]);
 
-  // 👇 TANGKAP TOMBOL BACK HARDWARE UNTUK MENUTUP MODAL PICKER 👇
+  // Interseptor tombol Back Android agar menutup Popup Dropdown dahulu
   useEffect(() => {
     const handleBackView = () => {
-      if (pickerType !== null) {
-        setPickerType(null);
-      }
+      if (pickerType !== null) setPickerType(null);
     };
     window.addEventListener('popstate', handleBackView);
     return () => window.removeEventListener('popstate', handleBackView);
   }, [pickerType]);
 
+  // Tarik Logika Statistik AI dari Custom Hook
   const {
     snapshotHariIni, marketShareData, targetBesokList, tomorrowDateStr,
     trafficData, totalAvgVisits, currentDayName, peakTrafficText
   } = useDashboardStats({
-    archiveData, sisaArchive, priceList, bahanList, resepData, targetYieldData, localDate, visitData, normalizeDate,
+    archiveData, sisaArchive, priceList, bahanList, resepData, targetYieldData, 
+    localDate, visitData, normalizeDate,
     filterMode, selectedMonthIdx, selectedYear, startDate, endDate
   });
 
-  const donutColors = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6366f1', '#ec4899', '#14b8a6', '#eab308', '#f43f5e', '#84cc16'];
-  const radius = 38; const circumference = 2 * Math.PI * radius; let cumulativePercent = 0;
+  // Perhitungan Struktur Titik Koordinat Kurva Grafik SVG secara terisolasi
+  const { safeTrafficData, maxTraffic, svgWidth, svgHeight, paddingY, trafficPoints, smoothLine, smoothArea } = useMemo(() => {
+    const sData = trafficData?.length ? trafficData : [{ hour: 7, total: 0 }, { hour: 8, total: 0 }];
+    const maxT = Math.max(...sData.map(d => d.total), 1);
+    const sW = 1000; const sH = 220; const pY = 40; 
+    const xStep = sData.length > 1 ? sW / (sData.length - 1) : sW;
+    
+    const tPoints = sData.map((d, i) => ({ 
+      x: i * xStep, 
+      y: sH - pY - ((d.total / maxT) * (sH - pY * 2)), 
+      ...d 
+    }));
+    
+    const createPath = (points) => {
+      if (points.length === 0) return '';
+      let path = `M ${points[0].x},${points[0].y}`;
+      for (let i = 0; i < points.length - 1; i++) {
+        const xMid = (points[i].x + points[i + 1].x) / 2;
+        path += ` C ${xMid},${points[i].y} ${xMid},${points[i + 1].y} ${points[i + 1].x},${points[i + 1].y}`;
+      }
+      return path;
+    };
+    
+    const sLine = createPath(tPoints);
+    const sArea = tPoints.length > 1 ? `${sLine} L ${tPoints[tPoints.length - 1].x},${sH - pY} L ${tPoints[0].x},${sH - pY} Z` : '';
+    
+    return { safeTrafficData: sData, maxTraffic: maxT, svgWidth: sW, svgHeight: sH, paddingY: pY, trafficPoints: tPoints, smoothLine: sLine, smoothArea: sArea };
+  }, [trafficData]);
 
-  const safeTrafficData = trafficData?.length ? trafficData : [{ hour: 7, total: 0 }, { hour: 8, total: 0 }];
-  const maxTraffic = Math.max(...safeTrafficData.map(d => d.total), 1);
-  const svgWidth = 1000; const svgHeight = 220; const paddingY = 40; 
-  const xStep = safeTrafficData.length > 1 ? svgWidth / (safeTrafficData.length - 1) : svgWidth;
-  const trafficPoints = safeTrafficData.map((d, i) => ({ x: i * xStep, y: svgHeight - paddingY - ((d.total / maxTraffic) * (svgHeight - paddingY * 2)), ...d }));
-  
-  const createSmoothPath = (points) => {
-    if (points.length === 0) return '';
-    let path = `M ${points[0].x},${points[0].y}`;
-    for (let i = 0; i < points.length - 1; i++) {
-      const xMid = (points[i].x + points[i + 1].x) / 2;
-      path += ` C ${xMid},${points[i].y} ${xMid},${points[i + 1].y} ${points[i + 1].x},${points[i + 1].y}`;
-    }
-    return path;
-  };
-  const smoothLine = createSmoothPath(trafficPoints);
-  const smoothArea = trafficPoints.length > 1 ? `${smoothLine} L ${trafficPoints[trafficPoints.length - 1].x},${svgHeight - paddingY} L ${trafficPoints[0].x},${svgHeight - paddingY} Z` : '';
-
-  const bestSalesKue = marketShareData?.list?.[0];
-
-  // 🔥 Mengambil Data Rincian Produksi (Input) Hari Ini
+  // Ekstraksi baris kue produksi hari ini
   const todayProduction = useMemo(() => {
     const tglKey = normalizeDate(localDate);
     const dataHariIni = archiveData[tglKey] || [];
@@ -98,32 +119,64 @@ const Dashboard = ({
       .map(item => ({ kue: item.jenisKue, qty: Number(item.stokBaru) }));
   }, [archiveData, localDate, normalizeDate]);
 
+  // Taktik render Donut Chart yang aman dari polusi StrictMode React
+  const donutCirclesRender = useMemo(() => {
+    let cumulativePercent = 0;
+    if (!marketShareData?.list) return null;
+
+    return marketShareData.list.map((item, idx) => {
+      const pct = marketShareData.totalTerjual > 0 ? (item.terjual / marketShareData.totalTerjual) : 0;
+      const strokeLength = pct * DONUT_CIRCUMFERENCE;
+      const offset = cumulativePercent * DONUT_CIRCUMFERENCE;
+      cumulativePercent += pct;
+
+      return (
+        <circle 
+          key={idx} cx="50" cy="50" r={DONUT_RADIUS} 
+          fill="transparent" 
+          stroke={DONUT_COLORS_PALETTE[idx % DONUT_COLORS_PALETTE.length]} 
+          strokeWidth="12" 
+          strokeDasharray={`${strokeLength} ${DONUT_CIRCUMFERENCE}`} 
+          strokeDashoffset={-offset} 
+          strokeLinecap="round" 
+          className="transition-all duration-1000 ease-out" 
+        />
+      );
+    });
+  }, [marketShareData]);
+
   return (
     <div className="relative pb-32">
       
-      {/* 🚀 STICKY HEADER ASLI (Tidak Diubah Margin/Padding-nya) 🚀 */}
+      {/* HEADER STICKY */}
       <div className="sticky top-0 z-[60] px-4 pt-4 pb-3 bg-white/95 dark:bg-[#020617]/95 backdrop-blur-2xl border-b border-slate-200/60 dark:border-slate-800/60 shadow-sm flex flex-col gap-y-3">
-        
-        {/* Cover shadow untuk menyamarkan batas blur saat di-scroll */}
         <div className="absolute -top-20 left-0 right-0 h-20 bg-white/95 dark:bg-[#020617]/95 backdrop-blur-2xl"></div>
-        
-        {/* Baris Judul & Kalender */}
         <div className="flex items-center justify-between relative z-10 pt-1">
           <div className="flex flex-col">
             <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-800 dark:text-white leading-none uppercase">Dashboard</h1>
             <div className="h-1.5 w-8 bg-sky-500 mt-1.5 rounded-full shadow-sm shadow-sky-500/30"></div>
           </div>
-          
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-sky-500/20 bg-sky-500/10 shadow-sm relative overflow-hidden active:scale-95 transition-transform">
-            <CalendarDays size={12} className="text-sky-500 dark:text-sky-400" />
+
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-sky-500/20 bg-sky-500/10 shadow-sm relative overflow-hidden active:scale-95 transition-transform hover:bg-sky-500/20 cursor-pointer">
+            <CalendarDays size={12} className="text-sky-500 dark:text-sky-400 pointer-events-none" />
             <span className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest truncate max-w-[140px] sm:max-w-[200px] pointer-events-none">
               {formatTanggal(localDate)}
             </span>
-            <input type="date" value={localDate} onChange={(e) => setLocalDate(e.target.value)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+            <input 
+              type="date" 
+              value={localDate} 
+              onChange={(e) => setLocalDate(e.target.value)} 
+              onClick={(e) => {
+                try {
+                  if (e.target.showPicker) e.target.showPicker();
+                } catch (err) {}
+              }}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+            />
           </div>
         </div>
 
-        {/* 📦 SNAPSHOT FISIK HARI INI */}
+        {/* SNAPSHOT QUICK INFO CONTAINER */}
         <div className="grid grid-cols-4 gap-1.5 relative z-10">
           {[
             { label: 'Sisa Lalu', val: snapshotHariIni?.totalSisaSebelumnya || 0, color: 'text-slate-500', icon: Archive, isImportant: false },
@@ -131,12 +184,12 @@ const Dashboard = ({
             { label: 'Laku', val: snapshotHariIni?.totalTerjual || 0, color: 'text-emerald-500', icon: Award, isImportant: true },
             { label: 'Sisa Akhir', val: snapshotHariIni?.totalSisaAkhir || 0, color: 'text-amber-500', icon: Package, isImportant: true }
           ].map((item, i) => {
-            const showWarning = !snapshotHariIni?.hasInputToday && item.isImportant;
+            const anonymityTriggerWarning = !snapshotHariIni?.hasInputToday && item.isImportant;
             return (
               <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-700/50 rounded-[12px] p-2 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden">
                 <item.icon size={13} className={`${item.color} mx-auto mb-1`} />
                 <p className="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5 truncate w-full">{item.label}</p>
-                {showWarning ? (
+                {anonymityTriggerWarning ? (
                   <span className="text-[8px] font-black text-rose-500 animate-pulse leading-none uppercase">Input!</span>
                 ) : (
                   <p className={`text-[13px] sm:text-sm font-black ${item.color} leading-none`}>{item.val}</p>
@@ -146,7 +199,7 @@ const Dashboard = ({
           })}
         </div>
 
-        {/* 👇 RINCIAN INPUT KUE HARI INI (1 Baris, Scroll Menyamping, Sangat Compact) 👇 */}
+        {/* REKAP PRODUKSI CHIP HARI INI */}
         {todayProduction.length > 0 && (
           <div className="relative z-10 -mt-1">
             <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -160,7 +213,7 @@ const Dashboard = ({
           </div>
         )}
 
-        {/* 🎛️ FILTER CONTROLS */}
+        {/* TIME FILTER TOGGLE BAR */}
         <div className="relative z-10 bg-slate-100/50 dark:bg-slate-800/40 backdrop-blur-md border border-slate-200/60 dark:border-slate-800/80 rounded-xl p-1 flex flex-row gap-1 items-center shadow-sm w-full">
           <div className="bg-white/80 dark:bg-slate-800/80 rounded-lg p-0.5 flex items-center shrink-0 shadow-inner">
             {['all', 'bulan', 'periode'].map(mode => (
@@ -170,26 +223,22 @@ const Dashboard = ({
             ))}
           </div>
           <div className="flex-1 flex items-center justify-end min-w-0">
-            
-            {/* 🔥 PENAMBAHAN TAMPILAN MASTER DATA UNTUK MODE 'ALL' */}
             {filterMode === 'all' && (
               <div className="flex items-center justify-center w-full gap-2 px-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
                 <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em] truncate">Master Database</span>
               </div>
             )}
-
             {filterMode === 'bulan' && (
               <div className="flex items-center w-full gap-1">
                 <button onClick={() => setPickerType(pickerType === 'month' ? null : 'month')} className="w-full flex justify-between items-center bg-white/90 dark:bg-slate-950/90 text-[10px] font-bold text-slate-800 dark:text-slate-200 rounded-md px-2 py-1.5 border border-slate-200 dark:border-slate-800 shadow-sm">
-                  <span className="truncate pr-1">{months[selectedMonthIdx]}</span> <ChevronDown size={10} className="text-slate-400" />
+                  <span className="truncate pr-1">{MONTHS_LIST[selectedMonthIdx]}</span> <ChevronDown size={10} className="text-slate-400" />
                 </button>
                 <button onClick={() => setPickerType(pickerType === 'year' ? null : 'year')} className="w-[55px] flex justify-between items-center bg-white/90 dark:bg-slate-950/90 text-[10px] font-bold text-slate-800 dark:text-slate-200 rounded-md px-2 py-1.5 border border-slate-200 dark:border-slate-800 shadow-sm">
                   <span>{selectedYear}</span> <ChevronDown size={10} className="text-slate-400" />
                 </button>
               </div>
             )}
-            
             {filterMode === 'periode' && (
               <div className="flex items-center gap-1 w-full min-w-0">
                 <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full flex-1 min-w-0 bg-white/90 dark:bg-slate-950/90 text-[9px] font-bold text-slate-800 dark:text-slate-200 p-1.5 rounded-md border border-slate-200 dark:border-slate-800 shadow-sm outline-none text-center uppercase" />
@@ -201,7 +250,9 @@ const Dashboard = ({
         </div>
       </div>
 
+      {/* DASHBOARD CONTENT BODY */}
       <div className="mt-4 px-4 space-y-4">
+        
         {/* ALERT RUSAK */}
         {snapshotHariIni?.totalRusak > 0 && (
           <div className="bg-rose-500/10 dark:bg-rose-500/20 border border-rose-200/50 dark:border-rose-900/30 p-4 rounded-2xl flex items-center justify-between shadow-sm animate-in zoom-in-95 z-10 relative">
@@ -213,14 +264,14 @@ const Dashboard = ({
           </div>
         )}
 
-        {/* 🍰 MARKET SHARE */}
+        {/* 🍰 MARKET SHARE DONUT PANEL */}
         <div className="bg-white/50 dark:bg-slate-900/40 backdrop-blur-xl border border-white/60 dark:border-slate-800/60 rounded-[2rem] p-5 shadow-sm relative overflow-hidden flex flex-col z-10">
           <div className="flex items-center gap-2.5 mb-5 px-1">
             <div className="bg-sky-500/10 p-2 rounded-xl"><PieChart size={18} className="text-sky-500" /></div>
             <div>
               <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 tracking-tight leading-none mb-1.5">Rata-Rata Terlaris Hari {currentDayName}</h3>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                {filterMode === 'all' ? 'All-Time' : filterMode === 'bulan' ? `Bulan ${months[selectedMonthIdx]}` : 'Rentang Waktu'}
+                {filterMode === 'all' ? 'All-Time' : filterMode === 'bulan' ? `Bulan ${MONTHS_LIST[selectedMonthIdx]}` : 'Rentang Waktu'}
               </p>
             </div>
           </div>
@@ -228,13 +279,7 @@ const Dashboard = ({
           <div className="flex items-center gap-4 sm:gap-8 mb-2">
             <div className="relative w-36 h-36 shrink-0 flex items-center justify-center">
               <svg viewBox="0 0 100 100" className={`w-full h-full -rotate-90 transition-all duration-1000 ${isMounted ? 'opacity-100 scale-100' : 'opacity-0 scale-90'}`}>
-                {marketShareData?.list?.map((item, idx) => {
-                  const pct = marketShareData.totalTerjual > 0 ? (item.terjual / marketShareData.totalTerjual) : 0;
-                  const strokeLength = (pct * circumference);
-                  const offset = cumulativePercent * circumference;
-                  cumulativePercent += pct;
-                  return <circle key={idx} cx="50" cy="50" r={radius} fill="transparent" stroke={donutColors[idx % donutColors.length]} strokeWidth="12" strokeDasharray={`${strokeLength} ${circumference}`} strokeDashoffset={-offset} strokeLinecap="round" className="transition-all duration-1000 ease-out" />;
-                })}
+                {donutCirclesRender}
               </svg>
               <div className="absolute flex flex-col items-center mt-0.5">
                 <span className="text-xl font-black text-slate-800 dark:text-white leading-none">{marketShareData?.totalTerjual || 0}</span>
@@ -252,7 +297,7 @@ const Dashboard = ({
                     <div key={idx} className="flex flex-col mb-1.5 border-b border-slate-200/80 dark:border-slate-700/80 pb-2 last:border-0 last:pb-0">
                       <div className="flex items-center justify-between mb-0.5">
                         <div className="flex items-center gap-2 overflow-hidden pr-2">
-                          <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: donutColors[idx % donutColors.length] }}></span>
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: DONUT_COLORS_PALETTE[idx % DONUT_COLORS_PALETTE.length] }}></span>
                           <span className="text-sm font-black text-slate-800 dark:text-slate-100 truncate">{item.namaKue}</span>
                         </div>
                         <div className="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-600 shadow-sm shrink-0">
@@ -270,7 +315,7 @@ const Dashboard = ({
           </div>
         </div>
 
-        {/* 📈 GRAFIK TRAFFIC */}
+        {/* 📈 TRAFFIC LALU LINTAS KUNJUNGAN */}
         <div className="bg-white/50 dark:bg-slate-900/40 backdrop-blur-xl border border-white/60 dark:border-slate-800/60 rounded-[2rem] p-5 shadow-sm relative overflow-hidden flex flex-col z-10">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 px-1">
             <div className="flex items-center gap-2.5">
@@ -318,7 +363,7 @@ const Dashboard = ({
           </div>
         </div>
 
-        {/* 🎯 TARGET PRODUKSI BESOK */}
+        {/* 🎯 TARGET PREDIKSI PRODUKSI AI BESOK */}
         <div className="bg-white/40 dark:bg-sky-950/20 backdrop-blur-xl border border-white/60 dark:border-sky-900/30 rounded-[2.5rem] p-5 shadow-sm relative overflow-hidden z-10">
           <div className="absolute -right-6 -top-6 opacity-[0.05] dark:opacity-[0.1] text-sky-600 rotate-12 pointer-events-none"><ChefHat size={140} /></div>
           <div className="flex items-center justify-between mb-5 relative z-10 px-1">
@@ -370,13 +415,13 @@ const Dashboard = ({
         </div>
       </div>
 
-      {/* Picker Popups */}
+      {/* CUSTOM DATE MONTH/YEAR SELECTION POPUPS */}
       {pickerType === 'month' && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm p-6" onClick={() => setPickerType(null)}>
           <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-xs p-4 shadow-2xl animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
             <h4 className="text-xs font-black text-slate-400 mb-3 text-center uppercase tracking-widest">Pilih Bulan</h4>
             <div className="grid grid-cols-2 gap-2">
-              {months.map((m, i) => (
+              {MONTHS_LIST.map((m, i) => (
                 <button key={i} type="button" onClick={() => { setSelectedMonthIdx(i); setPickerType(null); }} className={`py-2.5 text-[10px] font-bold rounded-xl transition-all ${Number(selectedMonthIdx) === i ? 'bg-sky-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 active:scale-95'}`}>
                   {m}
                 </button>
@@ -391,7 +436,7 @@ const Dashboard = ({
           <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-xs p-4 shadow-2xl animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
             <h4 className="text-xs font-black text-slate-400 mb-3 text-center uppercase tracking-widest">Pilih Tahun</h4>
             <div className="flex flex-col gap-2">
-              {years.map(y => (
+              {yearsOptions.map(y => (
                 <button key={y} type="button" onClick={() => { setSelectedYear(y); setPickerType(null); }} className={`py-2.5 text-[10px] font-bold rounded-xl transition-all ${Number(selectedYear) === y ? 'bg-sky-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 active:scale-95'}`}>
                   {y}
                 </button>
@@ -404,4 +449,5 @@ const Dashboard = ({
   );
 };
 
-export default Dashboard;
+// 🔥 SINKRONISASI AKHIR: Kunci Siklus Render Menggunakan React.memo 🔥
+export default React.memo(Dashboard);

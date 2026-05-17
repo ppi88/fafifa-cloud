@@ -1,6 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Save, Loader2, X, Database, Tag, Scale, Hash } from 'lucide-react';
 
+// ============================================================================
+// 🌍 STATIC UTILS POOL (Dilempar ke luar untuk menghemat alokasi referensi RAM)
+// ============================================================================
+const formatTitleCase = (str) => {
+  if (!str) return "";
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+};
+
+// ============================================================================
+// 🧠 MEMOIZED ADD INVENTORY INGREDIENT FORM COMPONENT
+// ============================================================================
 const MasterAddBahanForm = ({ onClose, onSaveSuccess }) => {
   const [namaBahan, setNamaBahan] = useState("");
   const [harga, setHarga] = useState("");
@@ -34,11 +45,6 @@ const MasterAddBahanForm = ({ onClose, onSaveSuccess }) => {
     timeoutRefs.current.push(t);
   }, [onClose]);
 
-  const formatTitleCase = useCallback((str) => {
-    if (!str) return "";
-    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-  }, []);
-
   const handleSave = () => {
     if (!namaBahan.trim() || !harga || !kuantitas || isSubmitting) return;
     setIsSubmitting(true);
@@ -62,9 +68,9 @@ const MasterAddBahanForm = ({ onClose, onSaveSuccess }) => {
   };
 
   return (
-    // 👇 Penyesuaian layout: md:items-center agar di Desktop melayang di tengah 👇
     <div className="fixed inset-0 z-[300] flex items-end md:items-center justify-center overflow-hidden md:p-4">
       
+      {/* Backdrop Blur Overlay */}
       <div 
         className={`absolute inset-0 bg-slate-950/40 backdrop-blur-[4px] transition-opacity duration-500 ease-out
           ${isAnimateIn && !isAnimateOut ? 'opacity-100' : 'opacity-0'}
@@ -72,6 +78,7 @@ const MasterAddBahanForm = ({ onClose, onSaveSuccess }) => {
         onClick={initiateClose}
       ></div>
 
+      {/* Main Form Container Sheet */}
       <div 
         className={`relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-t-[2.5rem] md:rounded-[2rem] shadow-2xl p-5 md:p-8 pb-32 md:pb-8 border-t md:border border-slate-200/50 dark:border-slate-800 flex flex-col 
           transition-all duration-[500ms] will-change-transform
@@ -83,6 +90,7 @@ const MasterAddBahanForm = ({ onClose, onSaveSuccess }) => {
         {/* Indikator Swipe HP (Hanya Muncul di Mobile) */}
         <div className="md:hidden absolute top-3 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
 
+        {/* Form Header */}
         <div className="flex justify-between items-center mb-6 mt-2 md:mt-0 px-1 shrink-0">
           <div className="italic">
             <p className="text-[10px] md:text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-0.5">Inventory Unit</p>
@@ -93,6 +101,7 @@ const MasterAddBahanForm = ({ onClose, onSaveSuccess }) => {
           </button>
         </div>
 
+        {/* Input Fields Stack */}
         <div className="space-y-4 mb-8">
           
           {/* 1. Nama Bahan */}
@@ -130,6 +139,7 @@ const MasterAddBahanForm = ({ onClose, onSaveSuccess }) => {
             </div>
           </div>
 
+          {/* Grid Layout untuk Volume & Satuan */}
           <div className="grid grid-cols-2 gap-4">
             {/* 3. Kuantitas / Isi */}
             <div className="flex flex-col bg-slate-50 dark:bg-slate-950/50 rounded-[1.5rem] border border-slate-100 dark:border-slate-800 focus-within:ring-2 focus-within:ring-emerald-500/20 transition-all">
@@ -159,14 +169,15 @@ const MasterAddBahanForm = ({ onClose, onSaveSuccess }) => {
                 onChange={(e) => setSatuan(e.target.value)} 
                 className="w-full bg-transparent p-4 font-black text-slate-800 dark:text-white outline-none text-lg md:text-xl appearance-none uppercase cursor-pointer"
               >
-                <option value="Kg">Kg</option>
-                <option value="Gr">Gr</option>
-                <option value="Ltr">Ltr</option>
-                <option value="ml">ml</option>
-                <option value="cc">cc</option>
-                <option value="Keping">Keping</option>
-                <option value="pcs">pcs</option>
-                <option value="btr">btr</option>
+                {/* 🔥 SUNTIKAN SINKRONISASI DARK MODE: Memastikan tulisan menu drop-down terbaca di Android WebView apa pun */}
+                <option value="Kg" className="dark:bg-slate-900 text-slate-800 dark:text-white">Kg</option>
+                <option value="Gr" className="dark:bg-slate-900 text-slate-800 dark:text-white">Gr</option>
+                <option value="Ltr" className="dark:bg-slate-900 text-slate-800 dark:text-white">Ltr</option>
+                <option value="ml" className="dark:bg-slate-900 text-slate-800 dark:text-white">ml</option>
+                <option value="cc" className="dark:bg-slate-900 text-slate-800 dark:text-white">cc</option>
+                <option value="Keping" className="dark:bg-slate-900 text-slate-800 dark:text-white">Keping</option>
+                <option value="pcs" className="dark:bg-slate-900 text-slate-800 dark:text-white">pcs</option>
+                <option value="btr" className="dark:bg-slate-900 text-slate-800 dark:text-white">btr</option>
               </select>
             </div>
           </div>
@@ -185,6 +196,7 @@ const MasterAddBahanForm = ({ onClose, onSaveSuccess }) => {
 
         </div>
 
+        {/* Action Button */}
         <div className="shrink-0 mt-auto md:mt-4">
           <button 
             onClick={handleSave} 
@@ -205,4 +217,5 @@ const MasterAddBahanForm = ({ onClose, onSaveSuccess }) => {
   );
 };
 
-export default MasterAddBahanForm;
+// 🔥 SINKRONISASI AKHIR PERFORMA TINGGI: Kunci Siklus Menggunakan React.memo 🔥
+export default React.memo(MasterAddBahanForm);

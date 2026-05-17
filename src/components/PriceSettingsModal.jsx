@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import { X, Save, AlertCircle } from 'lucide-react';
 
+// ============================================================================
+// 🧠 MEMOIZED SYSTEM PRICE CONFIGURATION MODAL COMPONENT
+// ============================================================================
 const PriceSettingsModal = ({ priceList, onClose, onUpdate }) => {
   // State lokal agar perubahan tidak langsung terkirim ke server sebelum ditekan 'Simpan'
   const [prices, setPrices] = useState(priceList);
 
-  const handleSave = () => {
+  // --- 🔥 MEMOIZED HANDLERS PIPELINE (Strict Reference Equality) 🔥 ---
+  const handleSave = useCallback(() => {
     // Ubah objek prices kembali menjadi format array yang dibutuhkan Google Script
     const dataToSave = Object.keys(prices).map(kue => ({
       jenisKue: kue,
@@ -13,7 +17,15 @@ const PriceSettingsModal = ({ priceList, onClose, onUpdate }) => {
     }));
     onUpdate(dataToSave);
     onClose();
-  };
+  }, [prices, onUpdate, onClose]);
+
+  // Handler Perubahan Harga Terisolasi RAM (Mencegah Stale Closure Trap)
+  const handlePriceChange = useCallback((kue, value) => {
+    setPrices(prev => ({
+      ...prev,
+      [kue]: Number(value)
+    }));
+  }, []);
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center px-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -48,7 +60,8 @@ const PriceSettingsModal = ({ priceList, onClose, onUpdate }) => {
                   <input 
                     type="number" 
                     value={prices[kue]} 
-                    onChange={(e) => setPrices({...prices, [kue]: Number(e.target.value)})}
+                    // 🔥 FIX: Menggunakan Callback Setter Fungsional untuk Memotong Konsumsi RAM Berlebih
+                    onChange={(e) => handlePriceChange(kue, e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-transparent focus:border-blue-500/30 rounded-2xl pl-10 pr-4 py-3.5 text-xs font-black text-blue-600 dark:text-blue-400 outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
                     placeholder="0"
                   />
@@ -78,4 +91,5 @@ const PriceSettingsModal = ({ priceList, onClose, onUpdate }) => {
   );
 };
 
-export default PriceSettingsModal;
+// 🔥 SINKRONISASI AKHIR PERFORMA TINGGI: Kunci Siklus Menggunakan React.memo Murni 🔥
+export default React.memo(PriceSettingsModal);

@@ -10,9 +10,9 @@ const Header = ({ activeTab, setActiveTab, loading }) => {
         
         {/* Logo & Judul */}
         <div className="flex items-center gap-3">
-          {/* Kotak Logo (Ukuran 40x40px) */}
+          {/* Kotak Logo (Efek denyut saat loading) */}
           <div className="w-10 h-10 rounded-[14px] bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-md shrink-0">
-            <Activity size={20} strokeWidth={2.5} />
+            <Activity size={20} strokeWidth={2.5} className={loading ? "animate-pulse" : ""} />
           </div>
           
           {/* Teks Judul & Versi */}
@@ -26,13 +26,17 @@ const Header = ({ activeTab, setActiveTab, loading }) => {
                 V.1.0
               </span>
             </div>
-            <p className="text-[9px] text-green-500 font-black uppercase tracking-[0.15em] leading-none">
-              ● Live Database
+            
+            {/* 🔥 INDIKATOR SWR SILUMAN (Berubah Otomatis) 🔥 */}
+            <p className={`text-[9px] font-black uppercase tracking-[0.15em] leading-none transition-colors duration-300 ${
+              loading ? 'text-amber-500 animate-pulse' : 'text-green-500'
+            }`}>
+              ● {loading ? 'Menyinkronkan...' : 'Live Database'}
             </p>
           </div>
         </div>
 
-        {/* Tombol Pengaturan (Disamakan 40x40px agar seimbang dengan Logo) */}
+        {/* Tombol Pengaturan Pusat Kendali */}
         <button 
           type="button" 
           onClick={() => setActiveTab('Master')} 
@@ -42,7 +46,7 @@ const Header = ({ activeTab, setActiveTab, loading }) => {
               : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
           }`}
         >
-          <Grip size={18} className={loading ? "animate-spin" : ""} />
+          <Grip size={18} className={loading ? "animate-spin text-amber-500" : ""} />
         </button>
 
       </div>

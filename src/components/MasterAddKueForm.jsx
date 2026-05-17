@@ -1,6 +1,26 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Save, Loader2, ChevronLeft, X } from 'lucide-react';
 
+// ============================================================================
+// 🌍 STATIC UTILS POOL (Dilempar ke luar untuk menghemat alokasi memori RAM)
+// ============================================================================
+const formatTitleCase = (str) => {
+  if (!str) return "";
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+};
+
+const sanitizeInputName = (str) => {
+  if (!str) return "";
+  return str
+    .split(' ')
+    .map(word => formatTitleCase(word))
+    .join(' ')
+    .trim();
+};
+
+// ============================================================================
+// 🍏 MEMOIZED ADD MENU MODAL COMPONENT (iOS STYLE DESIGN)
+// ============================================================================
 const MasterAddKueForm = ({ onClose, onSaveSuccess }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newKue, setNewKue] = useState({ jenisKue: '', harga: '' });
@@ -8,32 +28,53 @@ const MasterAddKueForm = ({ onClose, onSaveSuccess }) => {
   // State untuk animasi masuk/keluar
   const [isMounted, setIsMounted] = useState(false);
   
-  // ⚡ TURBO OPTIMASI: Ref untuk menampung timeout agar tidak bocor memori (memory leak)
+  // ⚡ TURBO OPTIMASI: Ref untuk menampung timeout & input focus
   const timeoutRefs = useRef([]);
+  const inputNamaRef = useRef(null);
 
   useEffect(() => {
     let raf = requestAnimationFrame(() => {
       raf = requestAnimationFrame(() => {
         setIsMounted(true);
+        // Fokuskan kursor setelah animasi modal selesai (300ms)
+        const t = setTimeout(() => {
+          if (inputNamaRef.current) inputNamaRef.current.focus();
+        }, 300);
+        timeoutRefs.current.push(t);
       });
     });
     return () => {
       cancelAnimationFrame(raf);
-      // Bersihkan semua antrean timer saat komponen ditutup paksa
       timeoutRefs.current.forEach(clearTimeout);
     };
   }, []);
 
+  // Memoisasi Pengetikan Nama Kue
+  const handleNamaKueChange = useCallback((e) => {
+    const val = e.target.value;
+    setNewKue(prev => ({ ...prev, jenisKue: val }));
+  }, []);
+
+  // Memoisasi Pengetikan Harga Kue
+  const handleHargaKueChange = useCallback((e) => {
+    const val = e.target.value;
+    setNewKue(prev => ({ ...prev, harga: val }));
+  }, []);
+
   const handleSave = async () => {
-    if (!newKue.jenisKue || !newKue.harga) {
-      alert("Isi nama kue dan harganya dulu, Bang!");
+    // 🛡️ SANITASI INPUT ENTERPRISE: Ubah otomatis menjadi Title Case Standar
+    const cleanedNama = sanitizeInputName(newKue.jenisKue);
+    const cleanedHarga = Number(newKue.harga);
+
+    if (!cleanedNama || !cleanedHarga || cleanedHarga <= 0) {
+      alert("Isi nama produk dan harganya dengan benar dulu, Bang!");
       return;
     }
 
     setIsSubmitting(true);
     
     try {
-      await onSaveSuccess(newKue); 
+      await onSaveSuccess({ jenisKue: cleanedNama, harga: cleanedHarga }); 
       // Komponen ini akan otomatis di-unmount oleh parent (MasterPage) saat success
     } catch (error) {
       console.error("Gagal menyimpan data:", error);
@@ -51,8 +92,17 @@ const MasterAddKueForm = ({ onClose, onSaveSuccess }) => {
     timeoutRefs.current.push(t);
   }, [onClose]);
 
+  // ⌨️ FITUR ENTER: Tekan Enter untuk langsung simpan
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!isSubmitting && newKue.jenisKue && newKue.harga) {
+        handleSave();
+      }
+    }
+  }, [isSubmitting, newKue]);
+
   return (
-    // 👇 Penyesuaian layout: md:items-center agar di Desktop melayang di tengah 👇
     <div className="fixed inset-0 z-[300] flex md:items-center justify-center overflow-hidden md:p-4">
       
       {/* Backdrop (Hanya muncul di mode Desktop/Tablet) */}
@@ -61,10 +111,6 @@ const MasterAddKueForm = ({ onClose, onSaveSuccess }) => {
         onClick={closeWithAnimation}
       ></div>
 
-      {/* 👇 EFEK ANIMASI CERDAS 👇
-        Mobile: Meluncur dari kanan (translate-x)
-        Desktop: Fade in dari tengah (scale & opacity)
-      */}
       <div 
         className={`
           absolute inset-0 md:relative md:inset-auto w-full h-full md:h-auto md:max-w-md flex flex-col 
@@ -76,10 +122,9 @@ const MasterAddKueForm = ({ onClose, onSaveSuccess }) => {
         `}
       >
         
-        {/* Header Ala iOS (Clean & Centered logic) */}
+        {/* Header Ala iOS */}
         <div className="flex items-center justify-between mb-8 shrink-0">
           
-          {/* Tombol Back Mobile */}
           <button 
             onClick={closeWithAnimation} 
             className="md:hidden flex items-center gap-1 text-blue-600 dark:text-blue-400 active:opacity-50 transition-all"
@@ -88,13 +133,11 @@ const MasterAddKueForm = ({ onClose, onSaveSuccess }) => {
             <span className="text-[17px] font-medium">Kembali</span>
           </button>
           
-          {/* Judul Modal */}
           <div className="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none md:static md:translate-x-0 md:text-left">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] mb-0.5">Master Data</p>
-            <h3 className="text-[17px] md:text-2xl font-bold text-slate-900 dark:text-white leading-none">Kue Baru</h3>
+            <h3 className="text-[17px] md:text-2xl font-bold text-slate-900 dark:text-white leading-none">Produk Baru</h3>
           </div>
 
-          {/* Tombol Close Desktop */}
           <button 
             onClick={closeWithAnimation} 
             className="hidden md:flex p-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-500 hover:text-rose-500 active:scale-90 transition-all"
@@ -102,37 +145,45 @@ const MasterAddKueForm = ({ onClose, onSaveSuccess }) => {
             <X size={20} />
           </button>
 
-          {/* Dummy div untuk penyeimbang flex di Mobile */}
           <div className="w-16 md:hidden"></div>
         </div>
 
-        {/* Kontainer Form (iOS Grouped List Style) */}
+        {/* Kontainer Form Input Fields */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           <div className="bg-white dark:bg-[#1c1c1e] md:dark:bg-slate-950/50 rounded-[14px] md:rounded-[1.5rem] overflow-hidden shadow-sm border border-slate-200/50 dark:border-white/5 md:dark:border-slate-800">
             
-            {/* Row 1: Nama Kue */}
+            {/* Row 1: Nama Produk */}
             <div className="px-4 py-3.5 md:py-4 flex flex-col gap-1 border-b border-slate-100 dark:border-white/5 md:dark:border-slate-800">
-              <label className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight">Nama Jenis Kue</label>
+              <label htmlFor="namaKue" className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight cursor-pointer">
+                Nama Produk
+              </label>
               <input 
+                id="namaKue"
+                ref={inputNamaRef}
                 type="text" 
-                autoFocus // Kursor otomatis ngetik di sini saat dibuka
                 value={newKue.jenisKue}
-                onChange={(e) => setNewKue({...newKue, jenisKue: e.target.value})}
+                onChange={handleNamaKueChange}
+                onKeyDown={handleKeyDown}
                 className="w-full bg-transparent border-none p-0 text-[17px] md:text-lg font-medium text-slate-900 dark:text-white outline-none placeholder:text-slate-300 dark:placeholder:text-slate-700"
-                placeholder="Contoh: Risoles"
+                placeholder="Contoh: Risoles Sayur"
               />
             </div>
 
             {/* Row 2: Harga */}
             <div className="px-4 py-3.5 md:py-4 flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight">Harga Jual (Pcs)</label>
+              <label htmlFor="hargaKue" className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight cursor-pointer">
+                Harga Jual (Pcs)
+              </label>
               <div className="flex items-center gap-1">
                  <span className="text-[17px] md:text-lg font-semibold text-slate-400 md:mr-1">Rp</span>
                  <input 
+                  id="hargaKue"
                   type="number" 
                   inputMode="numeric"
+                  min="0"
                   value={newKue.harga}
-                  onChange={(e) => setNewKue({...newKue, harga: e.target.value})}
+                  onChange={handleHargaKueChange}
+                  onKeyDown={handleKeyDown}
                   className="w-full bg-transparent border-none p-0 text-[17px] md:text-lg font-bold text-blue-600 dark:text-blue-400 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-700"
                   placeholder="0"
                 />
@@ -146,9 +197,8 @@ const MasterAddKueForm = ({ onClose, onSaveSuccess }) => {
           </p>
         </div>
 
-        {/* Tombol Simpan (Sticky & Floating style iOS) */}
+        {/* Action Button Save Stack */}
         <div className="shrink-0 pt-4 md:pt-6 relative mt-auto">
-          {/* Gradient Blur Effect (Hanya di Mobile) */}
           <div className="md:hidden absolute -top-12 left-0 right-0 h-12 bg-gradient-to-t from-[#f2f2f7] dark:from-[#000000] to-transparent pointer-events-none"></div>
           
           <button 
@@ -165,7 +215,7 @@ const MasterAddKueForm = ({ onClose, onSaveSuccess }) => {
             ) : (
               <>
                 <Save size={20} strokeWidth={2.5} />
-                <span className="uppercase tracking-widest text-[13px] md:text-[14px] font-black">Simpan Kue Baru</span>
+                <span className="uppercase tracking-widest text-[13px] md:text-[14px] font-black">Simpan Produk</span>
               </>
             )}
           </button>
@@ -176,4 +226,5 @@ const MasterAddKueForm = ({ onClose, onSaveSuccess }) => {
   );
 };
 
-export default MasterAddKueForm;
+// 🔥 SINKRONISASI AKHIR PERFORMA TINGGI: Kunci Siklus Menggunakan React.memo 🔥
+export default React.memo(MasterAddKueForm);

@@ -1,6 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ChevronLeft, ChefHat, Edit3, Check, X, Plus } from 'lucide-react';
 
+// Shared Styling Class Contract
+const TABLE_CELL_CLASS = "px-3 md:px-4 py-2.5 text-[12px] md:text-[13px] whitespace-nowrap align-middle border-x border-slate-100 dark:border-slate-800/50";
+const TABLE_HEAD_CLASS = "px-3 md:px-4 py-3 text-[10px] font-black uppercase tracking-widest whitespace-nowrap border-x border-slate-200/50 dark:border-slate-700/60";
+
+// ============================================================================
+// 🧠 MEMOIZED PRODUCTION RECIPE DESIGNER MODAL
+// ============================================================================
 const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targetYieldData = {}, onClose, onSaveResep }) => {
   const [editingKue, setEditingKue] = useState(null);
   const [localResep, setLocalResep] = useState([]); 
@@ -20,27 +27,27 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
   const kueArray = useMemo(() => Object.entries(priceList), [priceList]);
   const bahanArray = useMemo(() => Object.entries(bahanList), [bahanList]);
 
-  // --- LOGIKA HITUNG MODAL (TETAP AMAN 100%) ---
-  const hitungModalBahan = (namaBahan, qty) => {
+  // --- 🔥 MEMOIZED CORE CALCULATORS (Mencegah Overhead Pembuatan Ulang Fungsi) 🔥 ---
+  const hitungModalBahan = useCallback((namaBahan, qty) => {
     const dataBahan = bahanList[namaBahan];
     if (!dataBahan || !dataBahan.harga || !dataBahan.kuantitas) return 0;
     return (dataBahan.harga / dataBahan.kuantitas) * Number(qty);
-  };
+  }, [bahanList]);
 
-  const hitungTotalModal = (resepArray) => {
+  const hitungTotalModal = useCallback((resepArray) => {
     return resepArray.reduce((total, item) => total + hitungModalBahan(item.namaBahan, item.qty), 0);
-  };
+  }, [hitungModalBahan]);
 
-  // --- HANDLER EDIT ---
-  const handleStartEdit = (namaKue) => {
+  // --- HANDLER EDIT FORM PIPELINE ---
+  const handleStartEdit = useCallback((namaKue) => {
     setEditingKue(namaKue);
     setLocalResep(resepData[namaKue] || []);
     setLocalYield(targetYieldData[namaKue] || 1); 
     setNewBahan("");
     setNewQty("");
-  };
+  }, [resepData, targetYieldData]);
 
-  const handleAddBahanToResep = () => {
+  const handleAddBahanToResep = useCallback(() => {
     if (!newBahan || !newQty || newQty <= 0) return;
     
     const existingIndex = localResep.findIndex(b => b.namaBahan === newBahan);
@@ -55,13 +62,13 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
     setLocalResep(updatedResep);
     setNewBahan("");
     setNewQty("");
-  };
+  }, [newBahan, newQty, localResep]);
 
-  const handleRemoveBahanFromResep = (indexToRemove) => {
-    setLocalResep(localResep.filter((_, idx) => idx !== indexToRemove));
-  };
+  const handleRemoveBahanFromResep = useCallback((indexToRemove) => {
+    setLocalResep(prevResep => prevResep.filter((_, idx) => idx !== indexToRemove));
+  }, []);
 
-  const handleSaveResep = (namaKue) => {
+  const handleSaveResep = useCallback((namaKue) => {
     if (newBahan && newQty) {
       alert("Tunggu Bang! Bahannya belum dimasukkan ke resep. Klik tombol (+) dulu ya!");
       return;
@@ -70,26 +77,31 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
       onSaveResep(namaKue, localResep, Number(localYield));
     }
     setEditingKue(null);
-  };
+  }, [newBahan, newQty, onSaveResep, localResep, localYield]);
 
-  const closeWithAnimation = () => {
+  const closeWithAnimation = useCallback(() => {
     setIsMounted(false);
-    setTimeout(() => { onClose(); }, 300);
-  };
+    const t = setTimeout(() => { onClose(); }, 300);
+    return () => clearTimeout(t);
+  }, [onClose]);
+
+  // Isolated Typing Input Handlers 
+  const handleYieldInputChange = useCallback((e) => setLocalYield(e.target.value), []);
+  const handleNewBahanSelectChange = useCallback((e) => setNewBahan(e.target.value), []);
+  const handleNewQtyInputChange = useCallback((e) => setNewQty(e.target.value), []);
 
   return (
     <div className={`absolute inset-0 z-20 flex flex-col bg-[#f8fafc] dark:bg-[#020617] transform transition-all duration-300 ease-[cubic-bezier(0.25,1,0.5,1)] ${isMounted ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
       
       {/* 🚀 HEADER UTAMA (FULL WIDTH 100% LAYAR) 🚀 */}
       <div className="w-full shrink-0 pt-[70px] md:pt-6 lg:pt-8 pb-3 md:pb-4 bg-[#f8fafc]/90 dark:bg-[#020617]/90 backdrop-blur-xl border-b border-slate-200/60 dark:border-slate-800/60 shadow-sm relative z-30 px-4">
-        
         <div className="absolute -top-20 left-0 right-0 h-20 bg-[#f8fafc] dark:bg-[#020617]"></div>
 
         <div className="max-w-md md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-auto flex items-center justify-between relative z-10">
           <div className="flex items-center gap-3 md:gap-4">
             <button 
               onClick={closeWithAnimation} 
-              className="p-2.5 md:p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 active:scale-90 shadow-sm transition-transform hover:text-rose-500"
+              className="p-2.5 md:p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 active:scale-90 shadow-sm transition-transform hover:text-rose-500"
             >
               <ChevronLeft size={20} />
             </button>
@@ -133,7 +145,7 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
                     <div key={index} className={`transition-colors duration-200 ${isEditing ? 'bg-amber-50/30 dark:bg-amber-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 flex items-center px-4 md:px-6 py-3 min-h-[64px] md:min-h-[72px]'}`}>
                       
                       {isEditing ? (
-                        // 👇 FORM EDIT RESEP (Responsive Layout) 👇
+                        /* 👇 FORM EDIT RESEP ACCORDING TO CONTRACT 👇 */
                         <div className="flex flex-col w-full px-5 py-4 border-l-4 border-amber-500 bg-amber-50/10 dark:bg-amber-900/5 animate-fade-in">
                           
                           <div className="flex flex-col md:flex-row md:justify-between md:items-end mb-4 border-b border-amber-200 dark:border-amber-800/30 pb-3 gap-3">
@@ -148,7 +160,7 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
                                   type="number" 
                                   min="1"
                                   value={localYield} 
-                                  onChange={(e) => setLocalYield(e.target.value)}
+                                  onChange={handleYieldInputChange}
                                   className="w-16 md:w-20 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800/50 rounded-lg px-2 py-1.5 text-xs md:text-sm font-black outline-none focus:ring-2 focus:ring-amber-500/30 text-center text-slate-800 dark:text-white shadow-sm"
                                 />
                               </div>
@@ -164,7 +176,7 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
                             </div>
                           </div>
 
-                          {/* Daftar Bahan yang sudah dimasukkan */}
+                          {/* Daftar Komposisi yang Terdaftar */}
                           <div className="space-y-2 mb-4">
                             {localResep.map((item, idx) => (
                               <div key={idx} className="flex items-center justify-between bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl p-2.5 md:p-3 shadow-sm">
@@ -186,17 +198,17 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
                             )}
                           </div>
 
-                          {/* Input Tambah Bahan Baru ke Resep */}
+                          {/* Input Selector Pengisi Bahan ke Formula */}
                           <div className="flex flex-col md:flex-row gap-2 mb-6 p-3 md:p-4 bg-amber-100/50 dark:bg-amber-900/20 rounded-xl border border-amber-200/50 dark:border-amber-800/30">
                             <div className="flex-1">
                               <select 
                                 className="w-full bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800/50 rounded-lg px-3 py-2.5 md:py-3 text-[12px] md:text-[13px] font-black outline-none focus:ring-2 focus:ring-amber-500/30 uppercase text-slate-700 dark:text-slate-200 appearance-none"
                                 value={newBahan}
-                                onChange={(e) => setNewBahan(e.target.value)}
+                                onChange={handleNewBahanSelectChange}
                               >
-                                <option value="">-- PILIH BAHAN --</option>
+                                <option value="" className="dark:bg-slate-900">-- PILIH BAHAN --</option>
                                 {bahanArray.map(([nBahan]) => (
-                                  <option key={nBahan} value={nBahan}>{nBahan}</option>
+                                  <option key={nBahan} value={nBahan} className="dark:bg-slate-900 text-slate-800 dark:text-white">{nBahan}</option>
                                 ))}
                               </select>
                             </div>
@@ -207,7 +219,7 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
                                   className="w-full bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800/50 rounded-lg px-3 py-2.5 md:py-3 text-[12px] md:text-[14px] font-black outline-none focus:ring-2 focus:ring-amber-500/30"
                                   placeholder="Qty"
                                   value={newQty}
-                                  onChange={(e) => setNewQty(e.target.value)}
+                                  onChange={handleNewQtyInputChange}
                                 />
                                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] md:text-[11px] font-bold text-slate-400 uppercase pointer-events-none">
                                   {newBahan ? bahanList[newBahan]?.satuan : ''}
@@ -223,7 +235,7 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
                             </div>
                           </div>
 
-                          {/* Tombol Action */}
+                          {/* Action Controller Footer */}
                           <div className="flex justify-end gap-2">
                             <button onClick={() => setEditingKue(null)} className="px-5 py-3 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-xs md:text-sm font-black active:scale-95 transition-transform uppercase tracking-wider hover:bg-slate-300 dark:hover:bg-slate-700">Batal</button>
                             <button onClick={() => handleSaveResep(namaKue)} className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs md:text-sm font-black active:scale-95 transition-transform flex items-center gap-1.5 uppercase tracking-wider shadow-lg shadow-amber-500/30">
@@ -232,11 +244,10 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
                           </div>
                         </div>
                       ) : (
-                        // 👇 TAMPILAN BARIS NORMAL 👇
+                        /* 👇 TAMPILAN BARIS DATA NORMAL INDEKS 👇 */
                         <>
                           <div className="w-8 md:w-10 text-[12px] md:text-[13px] font-bold text-slate-400 shrink-0">{index + 1}</div>
                           
-                          {/* Kolom Nama Kue */}
                           <div className="w-24 md:w-40 px-1 shrink-0">
                             <p className="text-[13px] md:text-[14px] font-black text-slate-700 dark:text-slate-100 tracking-tight leading-tight md:truncate">{namaKue}</p>
                             {currentYield > 1 && (
@@ -246,7 +257,6 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
                             )}
                           </div>
                           
-                          {/* Kolom Rincian Komposisi */}
                           <div className="flex-1 px-1 min-w-0 md:px-4">
                             {activeResep.length > 0 ? (
                               <p className="text-[9px] md:text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-snug line-clamp-3 md:line-clamp-2">
@@ -257,7 +267,6 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
                             )}
                           </div>
                           
-                          {/* Kolom Modal & HPP */}
                           <div className="w-24 md:w-32 text-right shrink-0">
                             <p className="text-[13px] md:text-[14px] font-black text-rose-500 dark:text-rose-400">Rp {Math.round(totalModal).toLocaleString('id-ID')}</p>
                             <p className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">
@@ -265,7 +274,6 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
                             </p>
                           </div>
                           
-                          {/* Kolom Aksi */}
                           <div className="w-10 md:w-16 ml-2 md:ml-4 flex justify-center shrink-0">
                             <button onClick={() => handleStartEdit(namaKue)} className="p-2 md:p-2.5 text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-lg hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/30 active:scale-90 transition-all shadow-sm">
                               <Edit3 size={16} className="md:w-5 md:h-5" />
@@ -285,4 +293,5 @@ const MasterResepModal = ({ priceList = {}, bahanList = {}, resepData = {}, targ
   );
 };
 
-export default MasterResepModal;
+// 🔥 LOCK ENGINE: Bungkus Rantai Akhir Menggunakan React.memo Murni 🔥
+export default React.memo(MasterResepModal);

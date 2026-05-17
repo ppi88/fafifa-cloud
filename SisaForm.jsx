@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Save, Loader2, X, Archive, CalendarDays, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
+// ============================================================================
+// 🧠 MEMOIZED END-OF-DAY INVENTORY FORM COMPONENT
+// ============================================================================
 const SisaForm = ({ 
   initialData = [], 
   onClose, 
@@ -15,11 +18,18 @@ const SisaForm = ({
   // Tanggal otomatis mengikuti yang sedang dibuka di halaman
   const [tanggalSisa, setTanggalSisa] = useState(selectedDate || new Date().toISOString().split('T')[0]);
 
-  // Siapkan data form berdasarkan master kue
+  // Siapkan data form berdasarkan master kue dengan akselerasi O(1) Lookup
   useEffect(() => {
     const activeList = masterKueList || [];
+    
+    // 🔥 OPTIMASI: Bangun peta indeks objek untuk memutus loop bersarang .find()
+    const existingLookupMap = Object.create(null);
+    for (let i = 0; i < initialData.length; i++) {
+      existingLookupMap[initialData[i].jenisKue] = initialData[i];
+    }
+
     const mergedData = activeList.map(namaKue => {
-      const existing = initialData.find(d => d.jenisKue === namaKue);
+      const existing = existingLookupMap[namaKue];
       return { 
         jenisKue: namaKue, 
         sisa: existing ? Number(existing.sisa) : '',
@@ -37,19 +47,25 @@ const SisaForm = ({
     );
   }, [formData]);
 
-  const initiateClose = () => {
+  // --- 🔥 MEMOIZED HANDLERS PIPELINE 🔥 ---
+  const initiateClose = useCallback(() => {
     setIsClosing(true);
     setTimeout(() => { onClose(); }, 300);
-  };
+  }, [onClose]);
 
-  const handleChange = (index, field, value) => {
-    const updated = [...formData];
-    // Pastikan angka tidak negatif
-    updated[index][field] = value === '' ? '' : Math.max(0, Number(value));
-    setFormData(updated);
-  };
+  const handleChange = useCallback((index, field, value) => {
+    setFormData(prev => {
+      const updated = [...prev];
+      // Pastikan angka tidak negatif
+      updated[index] = {
+        ...updated[index],
+        [field]: value === '' ? '' : Math.max(0, Number(value))
+      };
+      return updated;
+    });
+  }, []);
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     if (isFormEmpty) return;
     setIsSubmitting(true);
     
@@ -71,13 +87,16 @@ const SisaForm = ({
         setIsSubmitting(false);
       }, 300);
     }, 1000); // Simulasi loading agar terasa natural
-  };
+  }, [isFormEmpty, formData, tanggalSisa, onSaveSuccess]);
 
   const { totalSisa, totalRusak } = useMemo(() => {
-    return formData.reduce((acc, curr) => ({
-      totalSisa: acc.totalSisa + (Number(curr.sisa) || 0),
-      totalRusak: acc.totalRusak + (Number(curr.rusak) || 0)
-    }), { totalSisa: 0, totalRusak: 0 });
+    let tSisa = 0;
+    let tRusak = 0;
+    for (let i = 0; i < formData.length; i++) {
+      tSisa += (Number(formData[i].sisa) || 0);
+      tRusak += (Number(formData[i].rusak) || 0);
+    }
+    return { totalSisa: tSisa, totalRusak: tRusak };
   }, [formData]);
 
   return (
@@ -207,4 +226,5 @@ const SisaForm = ({
   );
 };
 
-export default SisaForm;
+// 🔥 SINKRONISASI AKHIR PERFORMA TINGGI: Kunci Siklus Menggunakan React.memo 🔥
+export default React.memo(SisaForm);
